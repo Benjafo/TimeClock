@@ -1,0 +1,19 @@
+{
+  "name": "timeclock-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for tracking time on projects",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "deploy": "node deploy-commands.js",
+    "db:setup": "node src/database/setup.js"
+  },
+  "keywords": ["discord", "bot", "time-tracking"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "better-sqlite3": "^9.2.2",
+    "dotenv": "^16.3.1"
+  }
+}
