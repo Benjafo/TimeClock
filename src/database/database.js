@@ -1,81 +1,157 @@
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
+const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
 const dbPath = process.env.DB_PATH || './data/timeclock.db';
-const db = new Database(dbPath);
 
-db.pragma('journal_mode = WAL');
+// Initialize sql.js
+let db;
+
+async function initializeDatabase() {
+    const SQL = await initSqlJs();
+
+    // Load existing database or create new one
+    if (fs.existsSync(dbPath)) {
+        const buffer = fs.readFileSync(dbPath);
+        db = new SQL.Database(buffer);
+    } else {
+        db = new SQL.Database();
+    }
+
+    return db;
+}
+
+// Helper to save database to disk
+function saveDatabase() {
+    const data = db.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(dbPath, buffer);
+}
+
+// Wrapper to mimic better-sqlite3 API
+class PreparedStatement {
+    constructor(db, sql) {
+        this.db = db;
+        this.sql = sql;
+    }
+
+    get(...params) {
+        const stmt = this.db.prepare(this.sql);
+        stmt.bind(params);
+        if (stmt.step()) {
+            const result = stmt.getAsObject();
+            stmt.free();
+            return result;
+        }
+        stmt.free();
+        return null;
+    }
+
+    all(...params) {
+        const stmt = this.db.prepare(this.sql);
+        stmt.bind(params);
+        const results = [];
+        while (stmt.step()) {
+            results.push(stmt.getAsObject());
+        }
+        stmt.free();
+        return results;
+    }
+
+    run(...params) {
+        const stmt = this.db.prepare(this.sql);
+        stmt.bind(params);
+        stmt.step();
+        const lastInsertRowid = this.db.exec("SELECT last_insert_rowid() as id")[0]?.values[0]?.[0];
+        stmt.free();
+        saveDatabase(); // Save after each write operation
+        return { lastInsertRowid, changes: this.db.getRowsModified() };
+    }
+}
+
+// Wrapper for db.prepare()
+function prepare(sql) {
+    return new PreparedStatement(db, sql);
+}
+
+// Initialize database synchronously (for backwards compatibility)
+// Note: This will be called at module load
+let dbInitialized = false;
+(async () => {
+    await initializeDatabase();
+    dbInitialized = true;
+})();
 
 const dbHelpers = {
     getOrCreateUser(discordId, username) {
-        const user = db.prepare('SELECT * FROM users WHERE discord_id = ?').get(discordId);
+        const user = prepare('SELECT * FROM users WHERE discord_id = ?').get(discordId);
 
         if (!user) {
-            db.prepare('INSERT INTO users (discord_id, username) VALUES (?, ?)').run(discordId, username);
-            return db.prepare('SELECT * FROM users WHERE discord_id = ?').get(discordId);
+            prepare('INSERT INTO users (discord_id, username) VALUES (?, ?)').run(discordId, username);
+            return prepare('SELECT * FROM users WHERE discord_id = ?').get(discordId);
         }
 
         return user;
     },
 
     isUserAdmin(discordId) {
-        const user = db.prepare('SELECT is_admin FROM users WHERE discord_id = ?').get(discordId);
+        const user = prepare('SELECT is_admin FROM users WHERE discord_id = ?').get(discordId);
         return user && user.is_admin === 1;
     },
 
     getProject(projectName) {
-        return db.prepare('SELECT * FROM projects WHERE name = ?').get(projectName);
+        return prepare('SELECT * FROM projects WHERE name = ?').get(projectName);
     },
 
     getAllProjects() {
-        return db.prepare('SELECT * FROM projects ORDER BY name').all();
+        return prepare('SELECT * FROM projects ORDER BY name').all();
     },
 
     createProject(name, createdBy) {
-        const stmt = db.prepare('INSERT INTO projects (name, created_by) VALUES (?, ?)');
+        const stmt = prepare('INSERT INTO projects (name, created_by) VALUES (?, ?)');
         const result = stmt.run(name, createdBy);
-        db.prepare('INSERT INTO user_projects (user_id, project_id) VALUES (?, ?)').run(createdBy, result.lastInsertRowid);
+        prepare('INSERT INTO user_projects (user_id, project_id) VALUES (?, ?)').run(createdBy, result.lastInsertRowid);
         return result.lastInsertRowid;
     },
 
     updateProjectName(oldName, newName) {
-        return db.prepare('UPDATE projects SET name = ? WHERE name = ?').run(newName, oldName);
+        return prepare('UPDATE projects SET name = ? WHERE name = ?').run(newName, oldName);
     },
 
     deleteProject(projectId) {
-        return db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+        return prepare('DELETE FROM projects WHERE id = ?').run(projectId);
     },
 
     isUserAssignedToProject(userId, projectId) {
-        const assignment = db.prepare('SELECT * FROM user_projects WHERE user_id = ? AND project_id = ?').get(userId, projectId);
+        const assignment = prepare('SELECT * FROM user_projects WHERE user_id = ? AND project_id = ?').get(userId, projectId);
         return !!assignment;
     },
 
     assignUserToProject(userId, projectId) {
-        return db.prepare('INSERT OR IGNORE INTO user_projects (user_id, project_id) VALUES (?, ?)').run(userId, projectId);
+        return prepare('INSERT OR IGNORE INTO user_projects (user_id, project_id) VALUES (?, ?)').run(userId, projectId);
     },
 
     getUserOpenEntry(userId) {
-        return db.prepare('SELECT * FROM time_entries WHERE user_id = ? AND clock_out IS NULL').get(userId);
+        return prepare('SELECT * FROM time_entries WHERE user_id = ? AND clock_out IS NULL').get(userId);
     },
 
     getUserOpenEntryForProject(userId, projectId) {
-        return db.prepare('SELECT * FROM time_entries WHERE user_id = ? AND project_id = ? AND clock_out IS NULL').get(userId, projectId);
+        return prepare('SELECT * FROM time_entries WHERE user_id = ? AND project_id = ? AND clock_out IS NULL').get(userId, projectId);
     },
 
     clockIn(userId, projectId) {
-        const stmt = db.prepare('INSERT INTO time_entries (user_id, project_id, clock_in) VALUES (?, ?, datetime("now"))');
+        const stmt = prepare('INSERT INTO time_entries (user_id, project_id, clock_in) VALUES (?, ?, datetime("now"))');
         return stmt.run(userId, projectId);
     },
 
     clockOut(entryId) {
-        return db.prepare('UPDATE time_entries SET clock_out = datetime("now") WHERE id = ?').run(entryId);
+        return prepare('UPDATE time_entries SET clock_out = datetime("now") WHERE id = ?').run(entryId);
     },
 
     getTimeEntries(userId, projectId = null, limit = 100) {
         if (projectId) {
-            return db.prepare(`
+            return prepare(`
                 SELECT te.*, p.name as project_name
                 FROM time_entries te
                 JOIN projects p ON te.project_id = p.id
@@ -84,7 +160,7 @@ const dbHelpers = {
                 LIMIT ?
             `).all(userId, projectId, limit);
         } else {
-            return db.prepare(`
+            return prepare(`
                 SELECT te.*, p.name as project_name
                 FROM time_entries te
                 JOIN projects p ON te.project_id = p.id
@@ -96,7 +172,7 @@ const dbHelpers = {
     },
 
     getTimeEntry(entryId) {
-        return db.prepare(`
+        return prepare(`
             SELECT te.*, p.name as project_name
             FROM time_entries te
             JOIN projects p ON te.project_id = p.id
@@ -105,11 +181,11 @@ const dbHelpers = {
     },
 
     updateTimeEntry(entryId, clockIn, clockOut) {
-        return db.prepare('UPDATE time_entries SET clock_in = ?, clock_out = ? WHERE id = ?').run(clockIn, clockOut, entryId);
+        return prepare('UPDATE time_entries SET clock_in = ?, clock_out = ? WHERE id = ?').run(clockIn, clockOut, entryId);
     },
 
     deleteTimeEntry(entryId) {
-        return db.prepare('DELETE FROM time_entries WHERE id = ?').run(entryId);
+        return prepare('DELETE FROM time_entries WHERE id = ?').run(entryId);
     },
 
     calculateTotalHours(entries) {
@@ -131,4 +207,4 @@ const dbHelpers = {
     }
 };
 
-module.exports = { db, dbHelpers };
+module.exports = { db, dbHelpers, initializeDatabase, saveDatabase };
