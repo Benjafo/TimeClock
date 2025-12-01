@@ -33,13 +33,15 @@ function formatDuration(hours, minutes) {
 
 function formatDate(dateString) {
     const date = new Date(dateString);
+    const timezone = process.env.TIMEZONE || 'America/New_York';
     return date.toLocaleString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
-        hour12: true
+        hour12: true,
+        timeZone: timezone
     });
 }
 

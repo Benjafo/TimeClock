@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-const dbPath = process.env.DB_PATH || './data/timeclock.db';
+const dbPath = process.env.DB_PATH || './tmp/timeclock.tmp.db';
 
 // Initialize sql.js
 let db;

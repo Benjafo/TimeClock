@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
-const dbPath = process.env.DB_PATH || './data/timeclock.db';
+const dbPath = process.env.DB_PATH || './tmp/timeclock.tmp.db';
 const dbDir = path.dirname(dbPath);
 
 if (!fs.existsSync(dbDir)) {
