@@ -47,25 +47,9 @@ npm --version
 sudo apt install git -y
 ```
 
-### 2.3 Install Database
-
-**For SQLite (simpler, good for small-medium usage):**
+### 2.3 Install SQLite
 ```bash
 sudo apt install sqlite3 -y
-```
-
-**For PostgreSQL (better for production):**
-```bash
-sudo apt install postgresql postgresql-contrib -y
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
-
-# Create database and user
-sudo -u postgres psql
-CREATE DATABASE timeclock_bot;
-CREATE USER botuser WITH PASSWORD 'your_secure_password';
-GRANT ALL PRIVILEGES ON DATABASE timeclock_bot TO botuser;
-\q
 ```
 
 ### 2.4 Install PM2 (Process Manager)
@@ -111,25 +95,13 @@ cd ~/discord-bots/timeclock
 ```
 
 ### 4.2 Transfer Your Bot Code
-**Option A: Using Git (recommended)**
 ```bash
 git clone https://github.com/yourusername/timeclock-bot.git .
-```
-
-**Option B: Using SCP from local machine**
-```bash
-# Run this from your local machine
-scp -r /path/to/local/timeclock/* botuser@your_server_ip:~/discord-bots/timeclock/
 ```
 
 ### 4.3 Install Dependencies
 ```bash
 npm install
-```
-
-### 4.4 Build TypeScript (if using TypeScript)
-```bash
-npm run build
 ```
 
 ## Step 5: Configure Environment Variables
@@ -147,15 +119,8 @@ CLIENT_ID=your_application_id_here
 GUILD_ID=your_server_id_here
 ADMIN_USER_ID=your_discord_user_id_here
 
-# Database Configuration (for PostgreSQL)
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=timeclock_bot
-DB_USER=botuser
-DB_PASSWORD=your_secure_password
-
-# Or for SQLite
-DB_PATH=/home/botuser/discord-bots/timeclock/data/timeclock.db
+# Database Configuration
+DB_PATH=/var/lib/timeclock/timeclock.db
 
 # Environment
 NODE_ENV=production
@@ -170,15 +135,20 @@ chmod 600 .env
 
 ## Step 6: Initialize Database
 
-### 6.1 Create Data Directory (for SQLite)
+### 6.1 Create Database Directory
 ```bash
-mkdir -p data
+# Create system directory (requires sudo)
+sudo mkdir -p /var/lib/timeclock
+
+# Give ownership to your bot user (replace with your actual username)
+sudo chown timeclockbotuser:timeclockbotuser /var/lib/timeclock
+
+# Set proper permissions
+sudo chmod 755 /var/lib/timeclock
 ```
 
-### 6.2 Run Database Migrations
+### 6.2 Run Database Setup
 ```bash
-npm run migrate
-# Or if you have a setup script:
 npm run db:setup
 ```
 
@@ -186,8 +156,7 @@ npm run db:setup
 
 ### 7.1 Register Commands with Discord
 ```bash
-node deploy-commands.js
-# Or: npm run deploy-commands
+npm run deploy
 ```
 
 You should see confirmation that commands were registered successfully.
@@ -197,8 +166,6 @@ You should see confirmation that commands were registered successfully.
 ### 8.1 Start Bot Process
 ```bash
 pm2 start npm --name "timeclock-bot" -- start
-# Or if using a specific entry file:
-pm2 start dist/index.js --name "timeclock-bot"
 ```
 
 ### 8.2 Configure PM2 to Start on Boot
@@ -242,20 +209,12 @@ pm2 monit
 cd ~/discord-bots/timeclock
 git pull origin main  # If using git
 npm install           # Install new dependencies
-npm run build         # If using TypeScript
 pm2 restart timeclock-bot
 ```
 
 ### Backup Database
-
-**For SQLite:**
 ```bash
-cp data/timeclock.db data/timeclock.db.backup-$(date +%Y%m%d)
-```
-
-**For PostgreSQL:**
-```bash
-pg_dump -U botuser timeclock_bot > backup-$(date +%Y%m%d).sql
+cp /var/lib/timeclock/timeclock.db /var/lib/timeclock/timeclock.db.backup-$(date +%Y%m%d)
 ```
 
 ### View Logs
@@ -325,14 +284,15 @@ cat .env
 
 ### Bot Not Responding to Commands
 - Verify bot has proper permissions in Discord server
-- Check that slash commands were deployed: `node deploy-commands.js`
+- Check that slash commands were deployed: `npm run deploy`
 - Ensure bot token is correct in .env
 - Check logs for errors: `pm2 logs timeclock-bot`
 
-### Database Connection Issues
-- Verify database is running: `sudo systemctl status postgresql`
-- Check database credentials in .env
-- Ensure database exists and user has proper permissions
+### Database Issues
+- Check that the database directory exists: `ls -la /var/lib/timeclock/`
+- Verify DB_PATH in .env points to `/var/lib/timeclock/timeclock.db`
+- Ensure the bot user has read/write permissions: `ls -l /var/lib/timeclock/`
+- Try running `npm run db:setup` again if database is corrupted
 
 ### Out of Memory
 ```bash
