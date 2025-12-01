@@ -153,19 +153,6 @@ TimeClock/
 └── DEPLOYMENT_GUIDE.md
 ```
 
-## Database Schema
-
-The bot uses SQLite with the following tables:
-
-- **users** - Discord users and admin status
-- **projects** - Available projects
-- **time_entries** - Clock in/out records
-- **user_projects** - User-to-project assignments
-
-## Deployment
-
-For production deployment instructions, see [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md).
-
 ## Troubleshooting
 
 ### Commands not showing up in Discord
