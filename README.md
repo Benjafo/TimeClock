@@ -103,7 +103,7 @@ This registers all slash commands with Discord.
 ### 8. Start the Bot
 
 ```bash
-npm start
+pm2 start npm --name "timeclock" -- start
 ```
 
 The bot should now be online in your Discord server!
