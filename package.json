@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "deploy": "node deploy-commands.js",
+    "deploy": "node src/utils/deploy-commands.js",
     "db:setup": "node src/database/setup.js"
   },
   "keywords": ["discord", "bot", "time-tracking"],

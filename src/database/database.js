@@ -204,6 +204,91 @@ const dbHelpers = {
         const minutes = Math.floor(totalMinutes % 60);
 
         return { hours, minutes, totalMinutes };
+    },
+
+    getAllOpenEntries() {
+        return prepare(`
+            SELECT te.*, p.name as project_name, u.username, u.discord_id
+            FROM time_entries te
+            JOIN projects p ON te.project_id = p.id
+            JOIN users u ON te.user_id = u.id
+            WHERE te.clock_out IS NULL
+            ORDER BY te.clock_in DESC
+        `).all();
+    },
+
+    getTeamSummary(startDate = null) {
+        let entries;
+
+        if (startDate) {
+            const startDateStr = startDate.toISOString().split('T')[0];
+            entries = prepare(`
+                SELECT te.*, p.name as project_name, u.username
+                FROM time_entries te
+                JOIN projects p ON te.project_id = p.id
+                JOIN users u ON te.user_id = u.id
+                WHERE te.clock_out IS NOT NULL
+                AND date(te.clock_in) >= date(?)
+                ORDER BY te.clock_in DESC
+            `).all(startDateStr);
+        } else {
+            entries = prepare(`
+                SELECT te.*, p.name as project_name, u.username
+                FROM time_entries te
+                JOIN projects p ON te.project_id = p.id
+                JOIN users u ON te.user_id = u.id
+                WHERE te.clock_out IS NOT NULL
+                ORDER BY te.clock_in DESC
+            `).all();
+        }
+
+        const byPerson = {};
+        const byProject = {};
+        let totalMinutes = 0;
+
+        for (const entry of entries) {
+            const clockIn = new Date(entry.clock_in);
+            const clockOut = new Date(entry.clock_out);
+            const diff = clockOut - clockIn;
+            const minutes = diff / (1000 * 60);
+
+            totalMinutes += minutes;
+
+            // By person
+            if (!byPerson[entry.username]) {
+                byPerson[entry.username] = { totalMinutes: 0, hours: 0, minutes: 0 };
+            }
+            byPerson[entry.username].totalMinutes += minutes;
+
+            // By project
+            if (!byProject[entry.project_name]) {
+                byProject[entry.project_name] = { totalMinutes: 0, hours: 0, minutes: 0 };
+            }
+            byProject[entry.project_name].totalMinutes += minutes;
+        }
+
+        // Convert minutes to hours/minutes for display
+        for (const username in byPerson) {
+            const total = byPerson[username].totalMinutes;
+            byPerson[username].hours = Math.floor(total / 60);
+            byPerson[username].minutes = Math.floor(total % 60);
+        }
+
+        for (const projectName in byProject) {
+            const total = byProject[projectName].totalMinutes;
+            byProject[projectName].hours = Math.floor(total / 60);
+            byProject[projectName].minutes = Math.floor(total % 60);
+        }
+
+        return {
+            entries,
+            byPerson,
+            byProject,
+            total: {
+                totalHours: Math.floor(totalMinutes / 60),
+                totalMinutes: Math.floor(totalMinutes % 60)
+            }
+        };
     }
 };
 
