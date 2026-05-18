@@ -1,157 +1,184 @@
-const initSqlJs = require('sql.js');
-const fs = require('fs');
-const path = require('path');
-require('dotenv').config();
+const initSqlJs = require("sql.js");
+const fs = require("fs");
+const path = require("path");
+require("dotenv").config();
 
-const dbPath = process.env.DB_PATH || './tmp/timeclock.tmp.db';
+const dbPath = process.env.DB_PATH || "./tmp/timeclock.tmp.db";
 
 // Initialize sql.js
 let db;
 
 async function initializeDatabase() {
-    const SQL = await initSqlJs();
+  const SQL = await initSqlJs();
 
-    // Load existing database or create new one
-    if (fs.existsSync(dbPath)) {
-        const buffer = fs.readFileSync(dbPath);
-        db = new SQL.Database(buffer);
-    } else {
-        db = new SQL.Database();
-    }
+  // Load existing database or create new one
+  if (fs.existsSync(dbPath)) {
+    const buffer = fs.readFileSync(dbPath);
+    db = new SQL.Database(buffer);
+  } else {
+    db = new SQL.Database();
+  }
 
-    return db;
+  return db;
 }
 
 // Helper to save database to disk
 function saveDatabase() {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(dbPath, buffer);
+  const data = db.export();
+  const buffer = Buffer.from(data);
+  fs.writeFileSync(dbPath, buffer);
 }
 
 // Wrapper to mimic better-sqlite3 API
 class PreparedStatement {
-    constructor(db, sql) {
-        this.db = db;
-        this.sql = sql;
-    }
+  constructor(db, sql) {
+    this.db = db;
+    this.sql = sql;
+  }
 
-    get(...params) {
-        const stmt = this.db.prepare(this.sql);
-        stmt.bind(params);
-        if (stmt.step()) {
-            const result = stmt.getAsObject();
-            stmt.free();
-            return result;
-        }
-        stmt.free();
-        return null;
+  get(...params) {
+    const stmt = this.db.prepare(this.sql);
+    stmt.bind(params);
+    if (stmt.step()) {
+      const result = stmt.getAsObject();
+      stmt.free();
+      return result;
     }
+    stmt.free();
+    return null;
+  }
 
-    all(...params) {
-        const stmt = this.db.prepare(this.sql);
-        stmt.bind(params);
-        const results = [];
-        while (stmt.step()) {
-            results.push(stmt.getAsObject());
-        }
-        stmt.free();
-        return results;
+  all(...params) {
+    const stmt = this.db.prepare(this.sql);
+    stmt.bind(params);
+    const results = [];
+    while (stmt.step()) {
+      results.push(stmt.getAsObject());
     }
+    stmt.free();
+    return results;
+  }
 
-    run(...params) {
-        const stmt = this.db.prepare(this.sql);
-        stmt.bind(params);
-        stmt.step();
-        const lastInsertRowid = this.db.exec("SELECT last_insert_rowid() as id")[0]?.values[0]?.[0];
-        stmt.free();
-        saveDatabase(); // Save after each write operation
-        return { lastInsertRowid, changes: this.db.getRowsModified() };
-    }
+  run(...params) {
+    const stmt = this.db.prepare(this.sql);
+    stmt.bind(params);
+    stmt.step();
+    const lastInsertRowid = this.db.exec("SELECT last_insert_rowid() as id")[0]
+      ?.values[0]?.[0];
+    stmt.free();
+    saveDatabase(); // Save after each write operation
+    return { lastInsertRowid, changes: this.db.getRowsModified() };
+  }
 }
 
 // Wrapper for db.prepare()
 function prepare(sql) {
-    return new PreparedStatement(db, sql);
+  return new PreparedStatement(db, sql);
 }
 
 // Initialize database synchronously (for backwards compatibility)
 // Note: This will be called at module load
 let dbInitialized = false;
 (async () => {
-    await initializeDatabase();
-    dbInitialized = true;
+  await initializeDatabase();
+  dbInitialized = true;
 })();
 
 const dbHelpers = {
-    getOrCreateUser(discordId, username) {
-        const user = prepare('SELECT * FROM users WHERE discord_id = ?').get(discordId);
+  getOrCreateUser(discordId, username) {
+    const user = prepare("SELECT * FROM users WHERE discord_id = ?").get(
+      discordId,
+    );
 
-        if (!user) {
-            prepare('INSERT INTO users (discord_id, username) VALUES (?, ?)').run(discordId, username);
-            return prepare('SELECT * FROM users WHERE discord_id = ?').get(discordId);
-        }
+    if (!user) {
+      prepare("INSERT INTO users (discord_id, username) VALUES (?, ?)").run(
+        discordId,
+        username,
+      );
+      return prepare("SELECT * FROM users WHERE discord_id = ?").get(discordId);
+    }
 
-        return user;
-    },
+    return user;
+  },
 
-    isUserAdmin(discordId) {
-        const user = prepare('SELECT is_admin FROM users WHERE discord_id = ?').get(discordId);
-        return user && user.is_admin === 1;
-    },
+  isUserAdmin(discordId) {
+    const user = prepare("SELECT is_admin FROM users WHERE discord_id = ?").get(
+      discordId,
+    );
+    return user && user.is_admin === 1;
+  },
 
-    getProject(projectName) {
-        return prepare('SELECT * FROM projects WHERE name = ?').get(projectName);
-    },
+  getProject(projectName) {
+    return prepare("SELECT * FROM projects WHERE name = ?").get(projectName);
+  },
 
-    getAllProjects() {
-        return prepare('SELECT * FROM projects ORDER BY name').all();
-    },
+  getAllProjects() {
+    return prepare("SELECT * FROM projects ORDER BY name").all();
+  },
 
-    createProject(name, createdBy) {
-        const stmt = prepare('INSERT INTO projects (name, created_by) VALUES (?, ?)');
-        const result = stmt.run(name, createdBy);
-        prepare('INSERT INTO user_projects (user_id, project_id) VALUES (?, ?)').run(createdBy, result.lastInsertRowid);
-        return result.lastInsertRowid;
-    },
+  createProject(name, createdBy) {
+    const stmt = prepare(
+      "INSERT INTO projects (name, created_by) VALUES (?, ?)",
+    );
+    const result = stmt.run(name, createdBy);
+    prepare(
+      "INSERT INTO user_projects (user_id, project_id) VALUES (?, ?)",
+    ).run(createdBy, result.lastInsertRowid);
+    return result.lastInsertRowid;
+  },
 
-    updateProjectName(oldName, newName) {
-        return prepare('UPDATE projects SET name = ? WHERE name = ?').run(newName, oldName);
-    },
+  updateProjectName(oldName, newName) {
+    return prepare("UPDATE projects SET name = ? WHERE name = ?").run(
+      newName,
+      oldName,
+    );
+  },
 
-    deleteProject(projectId) {
-        return prepare('DELETE FROM projects WHERE id = ?').run(projectId);
-    },
+  deleteProject(projectId) {
+    return prepare("DELETE FROM projects WHERE id = ?").run(projectId);
+  },
 
-    isUserAssignedToProject(userId, projectId) {
-        const assignment = prepare('SELECT * FROM user_projects WHERE user_id = ? AND project_id = ?').get(userId, projectId);
-        return !!assignment;
-    },
+  isUserAssignedToProject(userId, projectId) {
+    const assignment = prepare(
+      "SELECT * FROM user_projects WHERE user_id = ? AND project_id = ?",
+    ).get(userId, projectId);
+    return !!assignment;
+  },
 
-    assignUserToProject(userId, projectId) {
-        return prepare('INSERT OR IGNORE INTO user_projects (user_id, project_id) VALUES (?, ?)').run(userId, projectId);
-    },
+  assignUserToProject(userId, projectId) {
+    return prepare(
+      "INSERT OR IGNORE INTO user_projects (user_id, project_id) VALUES (?, ?)",
+    ).run(userId, projectId);
+  },
 
-    getUserOpenEntry(userId) {
-        return prepare('SELECT * FROM time_entries WHERE user_id = ? AND clock_out IS NULL').get(userId);
-    },
+  getUserOpenEntry(userId) {
+    return prepare(
+      "SELECT * FROM time_entries WHERE user_id = ? AND clock_out IS NULL",
+    ).get(userId);
+  },
 
-    getUserOpenEntryForProject(userId, projectId) {
-        return prepare('SELECT * FROM time_entries WHERE user_id = ? AND project_id = ? AND clock_out IS NULL').get(userId, projectId);
-    },
+  getUserOpenEntryForProject(userId, projectId) {
+    return prepare(
+      "SELECT * FROM time_entries WHERE user_id = ? AND project_id = ? AND clock_out IS NULL",
+    ).get(userId, projectId);
+  },
 
-    clockIn(userId, projectId) {
-        const stmt = prepare('INSERT INTO time_entries (user_id, project_id, clock_in) VALUES (?, ?, datetime("now"))');
-        return stmt.run(userId, projectId);
-    },
+  clockIn(userId, projectId) {
+    const stmt = prepare(
+      'INSERT INTO time_entries (user_id, project_id, clock_in) VALUES (?, ?, datetime("now"))',
+    );
+    return stmt.run(userId, projectId);
+  },
 
-    clockOut(entryId) {
-        return prepare('UPDATE time_entries SET clock_out = datetime("now") WHERE id = ?').run(entryId);
-    },
+  clockOut(entryId) {
+    return prepare(
+      'UPDATE time_entries SET clock_out = datetime("now") WHERE id = ?',
+    ).run(entryId);
+  },
 
-    getTimeEntries(userId, projectId = null, limit = 100) {
-        if (projectId) {
-            return prepare(`
+  getTimeEntries(userId, projectId = null, limit = 100) {
+    if (projectId) {
+      return prepare(`
                 SELECT te.*, p.name as project_name
                 FROM time_entries te
                 JOIN projects p ON te.project_id = p.id
@@ -159,8 +186,8 @@ const dbHelpers = {
                 ORDER BY te.clock_in DESC
                 LIMIT ?
             `).all(userId, projectId, limit);
-        } else {
-            return prepare(`
+    } else {
+      return prepare(`
                 SELECT te.*, p.name as project_name
                 FROM time_entries te
                 JOIN projects p ON te.project_id = p.id
@@ -168,46 +195,48 @@ const dbHelpers = {
                 ORDER BY te.clock_in DESC
                 LIMIT ?
             `).all(userId, limit);
-        }
-    },
+    }
+  },
 
-    getTimeEntry(entryId) {
-        return prepare(`
+  getTimeEntry(entryId) {
+    return prepare(`
             SELECT te.*, p.name as project_name
             FROM time_entries te
             JOIN projects p ON te.project_id = p.id
             WHERE te.id = ?
         `).get(entryId);
-    },
+  },
 
-    updateTimeEntry(entryId, clockIn, clockOut) {
-        return prepare('UPDATE time_entries SET clock_in = ?, clock_out = ? WHERE id = ?').run(clockIn, clockOut, entryId);
-    },
+  updateTimeEntry(entryId, clockIn, clockOut) {
+    return prepare(
+      "UPDATE time_entries SET clock_in = ?, clock_out = ? WHERE id = ?",
+    ).run(clockIn, clockOut, entryId);
+  },
 
-    deleteTimeEntry(entryId) {
-        return prepare('DELETE FROM time_entries WHERE id = ?').run(entryId);
-    },
+  deleteTimeEntry(entryId) {
+    return prepare("DELETE FROM time_entries WHERE id = ?").run(entryId);
+  },
 
-    calculateTotalHours(entries) {
-        let totalMinutes = 0;
+  calculateTotalHours(entries) {
+    let totalMinutes = 0;
 
-        for (const entry of entries) {
-            if (entry.clock_out) {
-                const clockIn = new Date(entry.clock_in);
-                const clockOut = new Date(entry.clock_out);
-                const diff = clockOut - clockIn;
-                totalMinutes += diff / (1000 * 60);
-            }
-        }
+    for (const entry of entries) {
+      if (entry.clock_out) {
+        const clockIn = new Date(entry.clock_in);
+        const clockOut = new Date(entry.clock_out);
+        const diff = clockOut - clockIn;
+        totalMinutes += diff / (1000 * 60);
+      }
+    }
 
-        const hours = Math.floor(totalMinutes / 60);
-        const minutes = Math.floor(totalMinutes % 60);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = Math.floor(totalMinutes % 60);
 
-        return { hours, minutes, totalMinutes };
-    },
+    return { hours, minutes, totalMinutes };
+  },
 
-    getAllOpenEntries() {
-        return prepare(`
+  getAllOpenEntries() {
+    return prepare(`
             SELECT te.*, p.name as project_name, u.username, u.discord_id
             FROM time_entries te
             JOIN projects p ON te.project_id = p.id
@@ -215,14 +244,14 @@ const dbHelpers = {
             WHERE te.clock_out IS NULL
             ORDER BY te.clock_in DESC
         `).all();
-    },
+  },
 
-    getTeamSummary(startDate = null) {
-        let entries;
+  getTeamSummary(startDate = null) {
+    let entries;
 
-        if (startDate) {
-            const startDateStr = startDate.toISOString().split('T')[0];
-            entries = prepare(`
+    if (startDate) {
+      const startDateStr = startDate.toISOString().split("T")[0];
+      entries = prepare(`
                 SELECT te.*, p.name as project_name, u.username
                 FROM time_entries te
                 JOIN projects p ON te.project_id = p.id
@@ -231,8 +260,8 @@ const dbHelpers = {
                 AND date(te.clock_in) >= date(?)
                 ORDER BY te.clock_in DESC
             `).all(startDateStr);
-        } else {
-            entries = prepare(`
+    } else {
+      entries = prepare(`
                 SELECT te.*, p.name as project_name, u.username
                 FROM time_entries te
                 JOIN projects p ON te.project_id = p.id
@@ -240,56 +269,60 @@ const dbHelpers = {
                 WHERE te.clock_out IS NOT NULL
                 ORDER BY te.clock_in DESC
             `).all();
-        }
-
-        const byPerson = {};
-        const byProject = {};
-        let totalMinutes = 0;
-
-        for (const entry of entries) {
-            const clockIn = new Date(entry.clock_in);
-            const clockOut = new Date(entry.clock_out);
-            const diff = clockOut - clockIn;
-            const minutes = diff / (1000 * 60);
-
-            totalMinutes += minutes;
-
-            // By person
-            if (!byPerson[entry.username]) {
-                byPerson[entry.username] = { totalMinutes: 0, hours: 0, minutes: 0 };
-            }
-            byPerson[entry.username].totalMinutes += minutes;
-
-            // By project
-            if (!byProject[entry.project_name]) {
-                byProject[entry.project_name] = { totalMinutes: 0, hours: 0, minutes: 0 };
-            }
-            byProject[entry.project_name].totalMinutes += minutes;
-        }
-
-        // Convert minutes to hours/minutes for display
-        for (const username in byPerson) {
-            const total = byPerson[username].totalMinutes;
-            byPerson[username].hours = Math.floor(total / 60);
-            byPerson[username].minutes = Math.floor(total % 60);
-        }
-
-        for (const projectName in byProject) {
-            const total = byProject[projectName].totalMinutes;
-            byProject[projectName].hours = Math.floor(total / 60);
-            byProject[projectName].minutes = Math.floor(total % 60);
-        }
-
-        return {
-            entries,
-            byPerson,
-            byProject,
-            total: {
-                totalHours: Math.floor(totalMinutes / 60),
-                totalMinutes: Math.floor(totalMinutes % 60)
-            }
-        };
     }
+
+    const byPerson = {};
+    const byProject = {};
+    let totalMinutes = 0;
+
+    for (const entry of entries) {
+      const clockIn = new Date(entry.clock_in);
+      const clockOut = new Date(entry.clock_out);
+      const diff = clockOut - clockIn;
+      const minutes = diff / (1000 * 60);
+
+      totalMinutes += minutes;
+
+      // By person
+      if (!byPerson[entry.username]) {
+        byPerson[entry.username] = { totalMinutes: 0, hours: 0, minutes: 0 };
+      }
+      byPerson[entry.username].totalMinutes += minutes;
+
+      // By project
+      if (!byProject[entry.project_name]) {
+        byProject[entry.project_name] = {
+          totalMinutes: 0,
+          hours: 0,
+          minutes: 0,
+        };
+      }
+      byProject[entry.project_name].totalMinutes += minutes;
+    }
+
+    // Convert minutes to hours/minutes for display
+    for (const username in byPerson) {
+      const total = byPerson[username].totalMinutes;
+      byPerson[username].hours = Math.floor(total / 60);
+      byPerson[username].minutes = Math.floor(total % 60);
+    }
+
+    for (const projectName in byProject) {
+      const total = byProject[projectName].totalMinutes;
+      byProject[projectName].hours = Math.floor(total / 60);
+      byProject[projectName].minutes = Math.floor(total % 60);
+    }
+
+    return {
+      entries,
+      byPerson,
+      byProject,
+      total: {
+        totalHours: Math.floor(totalMinutes / 60),
+        totalMinutes: Math.floor(totalMinutes % 60),
+      },
+    };
+  },
 };
 
 module.exports = { db, dbHelpers, initializeDatabase, saveDatabase };

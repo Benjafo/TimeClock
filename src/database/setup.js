@@ -1,18 +1,18 @@
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
-require('dotenv').config();
+const Database = require("better-sqlite3");
+const path = require("path");
+const fs = require("fs");
+require("dotenv").config();
 
-const dbPath = process.env.DB_PATH || './tmp/timeclock.tmp.db';
+const dbPath = process.env.DB_PATH || "./tmp/timeclock.tmp.db";
 const dbDir = path.dirname(dbPath);
 
 if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
+  fs.mkdirSync(dbDir, { recursive: true });
 }
 
 const db = new Database(dbPath);
 
-console.log('Creating database tables...');
+console.log("Creating database tables...");
 
 db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -59,10 +59,12 @@ db.exec(`
 
 const adminId = process.env.ADMIN_USER_ID;
 if (adminId) {
-    const stmt = db.prepare('INSERT OR IGNORE INTO users (discord_id, username, is_admin) VALUES (?, ?, 1)');
-    stmt.run(adminId, 'Admin');
-    console.log(`Admin user ${adminId} initialized.`);
+  const stmt = db.prepare(
+    "INSERT OR IGNORE INTO users (discord_id, username, is_admin) VALUES (?, ?, 1)",
+  );
+  stmt.run(adminId, "Admin");
+  console.log(`Admin user ${adminId} initialized.`);
 }
 
-console.log('Database setup complete!');
+console.log("Database setup complete!");
 db.close();
