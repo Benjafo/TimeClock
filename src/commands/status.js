@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { dbHelpers } = require("../database/database");
-const { formatDuration } = require("../utils/permissions");
+const { formatDuration, parseDbDate } = require("../utils/permissions");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -47,7 +47,7 @@ module.exports = {
     let statusText = "";
 
     for (const entry of entries) {
-      const clockInTime = new Date(entry.clock_in);
+      const clockInTime = parseDbDate(entry.clock_in);
       const now = new Date();
       const diff = now - clockInTime;
       const totalMinutes = diff / (1000 * 60);

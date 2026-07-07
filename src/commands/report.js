@@ -1,6 +1,10 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { dbHelpers } = require("../database/database");
-const { formatDuration, formatDate } = require("../utils/permissions");
+const {
+  formatDuration,
+  formatDate,
+  parseDbDate,
+} = require("../utils/permissions");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -98,7 +102,7 @@ module.exports = {
 
       let duration = "";
       if (entry.clock_out) {
-        const diff = new Date(entry.clock_out) - new Date(entry.clock_in);
+        const diff = parseDbDate(entry.clock_out) - parseDbDate(entry.clock_in);
         const mins = diff / (1000 * 60);
         const h = Math.floor(mins / 60);
         const m = Math.floor(mins % 60);

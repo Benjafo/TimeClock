@@ -145,18 +145,17 @@ module.exports = {
         });
       }
 
-      dbHelpers.updateTimeEntry(
-        entryId,
-        localToUTC(clockIn),
-        clockOut ? localToUTC(clockOut) : null,
-      );
+      const clockInUTC = localToUTC(clockIn);
+      const clockOutUTC = clockOut ? localToUTC(clockOut) : null;
+
+      dbHelpers.updateTimeEntry(entryId, clockInUTC, clockOutUTC);
 
       await interaction.reply({
         content:
           `Time entry updated successfully!\n` +
           `**${entry.project_name}**\n` +
-          `In: ${formatDate(clockIn)}\n` +
-          `Out: ${clockOut ? formatDate(clockOut) : "Not clocked out"}`,
+          `In: ${formatDate(clockInUTC)}\n` +
+          `Out: ${clockOutUTC ? formatDate(clockOutUTC) : "Not clocked out"}`,
         ephemeral: true,
       });
     } catch (error) {

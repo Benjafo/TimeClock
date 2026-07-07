@@ -1,6 +1,7 @@
 const initSqlJs = require("sql.js");
 const fs = require("fs");
 const path = require("path");
+const { parseDbDate } = require("../utils/time");
 require("dotenv").config();
 
 const dbPath = process.env.DB_PATH || "./tmp/timeclock.tmp.db";
@@ -222,8 +223,8 @@ const dbHelpers = {
 
     for (const entry of entries) {
       if (entry.clock_out) {
-        const clockIn = new Date(entry.clock_in);
-        const clockOut = new Date(entry.clock_out);
+        const clockIn = parseDbDate(entry.clock_in);
+        const clockOut = parseDbDate(entry.clock_out);
         const diff = clockOut - clockIn;
         totalMinutes += diff / (1000 * 60);
       }
@@ -250,14 +251,19 @@ const dbHelpers = {
     let entries;
 
     if (startDate) {
-      const startDateStr = startDate.toISOString().split("T")[0];
+      // Stored timestamps are UTC "YYYY-MM-DD HH:MM:SS", so compare against
+      // the exact UTC cutoff rather than truncating to UTC calendar days.
+      const startDateStr = startDate
+        .toISOString()
+        .replace("T", " ")
+        .substring(0, 19);
       entries = prepare(`
                 SELECT te.*, p.name as project_name, u.username
                 FROM time_entries te
                 JOIN projects p ON te.project_id = p.id
                 JOIN users u ON te.user_id = u.id
                 WHERE te.clock_out IS NOT NULL
-                AND date(te.clock_in) >= date(?)
+                AND te.clock_in >= ?
                 ORDER BY te.clock_in DESC
             `).all(startDateStr);
     } else {
@@ -276,8 +282,8 @@ const dbHelpers = {
     let totalMinutes = 0;
 
     for (const entry of entries) {
-      const clockIn = new Date(entry.clock_in);
-      const clockOut = new Date(entry.clock_out);
+      const clockIn = parseDbDate(entry.clock_in);
+      const clockOut = parseDbDate(entry.clock_out);
       const diff = clockOut - clockIn;
       const minutes = diff / (1000 * 60);
 
