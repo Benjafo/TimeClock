@@ -69,6 +69,28 @@ function localToUTC(dateString) {
   return new Date(utc).toISOString().replace("T", " ").substring(0, 19);
 }
 
+// Discord renders <t:epoch:style> in each viewer's own timezone. Only works
+// in message content and embeds — not in component labels or modal fields.
+function discordTimestamp(value, style = "f") {
+  const date = value instanceof Date ? value : parseDbDate(value);
+  return `<t:${Math.floor(date.getTime() / 1000)}:${style}>`;
+}
+
+// Rolling window start: the instant `amount` hours/days/months before now.
+function periodStart(amount, unit) {
+  const now = new Date();
+  if (unit === "hours") return new Date(now.getTime() - amount * 3600000);
+  if (unit === "days") return new Date(now.getTime() - amount * 86400000);
+  const d = new Date(now);
+  d.setMonth(d.getMonth() - amount);
+  return d;
+}
+
+// Convert a Date to the UTC "YYYY-MM-DD HH:MM:SS" format used in the DB.
+function toDbUTC(date) {
+  return date.toISOString().replace("T", " ").substring(0, 19);
+}
+
 function formatDate(dateString) {
   const date = parseDbDate(dateString);
   return date.toLocaleString("en-US", {
@@ -117,6 +139,9 @@ module.exports = {
   getTimezone,
   parseDbDate,
   localToUTC,
+  discordTimestamp,
+  periodStart,
+  toDbUTC,
   formatDate,
   formatTime,
   formatDateForInput,

@@ -152,6 +152,22 @@ const dbHelpers = {
     ).run(userId, projectId);
   },
 
+  removeUserFromProject(userId, projectId) {
+    return prepare(
+      "DELETE FROM user_projects WHERE user_id = ? AND project_id = ?",
+    ).run(userId, projectId);
+  },
+
+  getUserProjects(userId) {
+    return prepare(`
+            SELECT p.*
+            FROM projects p
+            JOIN user_projects up ON up.project_id = p.id
+            WHERE up.user_id = ?
+            ORDER BY p.name
+        `).all(userId);
+  },
+
   getUserOpenEntry(userId) {
     return prepare(
       "SELECT * FROM time_entries WHERE user_id = ? AND clock_out IS NULL",
@@ -171,32 +187,60 @@ const dbHelpers = {
     return stmt.run(userId, projectId);
   },
 
-  clockOut(entryId) {
+  clockOut(entryId, note = null) {
     return prepare(
-      'UPDATE time_entries SET clock_out = datetime("now") WHERE id = ?',
-    ).run(entryId);
+      'UPDATE time_entries SET clock_out = datetime("now"), notes = COALESCE(?, notes) WHERE id = ?',
+    ).run(note, entryId);
   },
 
-  getTimeEntries(userId, projectId = null, limit = 100) {
+  // sinceUtc: optional UTC "YYYY-MM-DD HH:MM:SS" cutoff (see toDbUTC)
+  getTimeEntries(userId, projectId = null, limit = 100, sinceUtc = null) {
+    const conditions = ["te.user_id = ?"];
+    const params = [userId];
+
     if (projectId) {
-      return prepare(`
-                SELECT te.*, p.name as project_name
-                FROM time_entries te
-                JOIN projects p ON te.project_id = p.id
-                WHERE te.user_id = ? AND te.project_id = ?
-                ORDER BY te.clock_in DESC
-                LIMIT ?
-            `).all(userId, projectId, limit);
-    } else {
-      return prepare(`
-                SELECT te.*, p.name as project_name
-                FROM time_entries te
-                JOIN projects p ON te.project_id = p.id
-                WHERE te.user_id = ?
-                ORDER BY te.clock_in DESC
-                LIMIT ?
-            `).all(userId, limit);
+      conditions.push("te.project_id = ?");
+      params.push(projectId);
     }
+    if (sinceUtc) {
+      conditions.push("te.clock_in >= ?");
+      params.push(sinceUtc);
+    }
+    params.push(limit);
+
+    return prepare(`
+            SELECT te.*, p.name as project_name
+            FROM time_entries te
+            JOIN projects p ON te.project_id = p.id
+            WHERE ${conditions.join(" AND ")}
+            ORDER BY te.clock_in DESC
+            LIMIT ?
+        `).all(...params);
+  },
+
+  getTeamTimeEntries(projectId = null, sinceUtc = null, limit = 10000) {
+    const conditions = ["1=1"];
+    const params = [];
+
+    if (projectId) {
+      conditions.push("te.project_id = ?");
+      params.push(projectId);
+    }
+    if (sinceUtc) {
+      conditions.push("te.clock_in >= ?");
+      params.push(sinceUtc);
+    }
+    params.push(limit);
+
+    return prepare(`
+            SELECT te.*, p.name as project_name, u.username
+            FROM time_entries te
+            JOIN projects p ON te.project_id = p.id
+            JOIN users u ON te.user_id = u.discord_id
+            WHERE ${conditions.join(" AND ")}
+            ORDER BY te.clock_in DESC
+            LIMIT ?
+        `).all(...params);
   },
 
   getTimeEntry(entryId) {
@@ -208,10 +252,10 @@ const dbHelpers = {
         `).get(entryId);
   },
 
-  updateTimeEntry(entryId, clockIn, clockOut) {
+  updateTimeEntry(entryId, clockIn, clockOut, notes = null) {
     return prepare(
-      "UPDATE time_entries SET clock_in = ?, clock_out = ? WHERE id = ?",
-    ).run(clockIn, clockOut, entryId);
+      "UPDATE time_entries SET clock_in = ?, clock_out = ?, notes = ? WHERE id = ?",
+    ).run(clockIn, clockOut, notes, entryId);
   },
 
   deleteTimeEntry(entryId) {
@@ -241,7 +285,7 @@ const dbHelpers = {
             SELECT te.*, p.name as project_name, u.username, u.discord_id
             FROM time_entries te
             JOIN projects p ON te.project_id = p.id
-            JOIN users u ON te.user_id = u.id
+            JOIN users u ON te.user_id = u.discord_id
             WHERE te.clock_out IS NULL
             ORDER BY te.clock_in DESC
         `).all();
@@ -261,7 +305,7 @@ const dbHelpers = {
                 SELECT te.*, p.name as project_name, u.username
                 FROM time_entries te
                 JOIN projects p ON te.project_id = p.id
-                JOIN users u ON te.user_id = u.id
+                JOIN users u ON te.user_id = u.discord_id
                 WHERE te.clock_out IS NOT NULL
                 AND te.clock_in >= ?
                 ORDER BY te.clock_in DESC
@@ -271,7 +315,7 @@ const dbHelpers = {
                 SELECT te.*, p.name as project_name, u.username
                 FROM time_entries te
                 JOIN projects p ON te.project_id = p.id
-                JOIN users u ON te.user_id = u.id
+                JOIN users u ON te.user_id = u.discord_id
                 WHERE te.clock_out IS NOT NULL
                 ORDER BY te.clock_in DESC
             `).all();

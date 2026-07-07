@@ -1,4 +1,4 @@
-const Database = require("better-sqlite3");
+const initSqlJs = require("sql.js");
 const path = require("path");
 const fs = require("fs");
 require("dotenv").config();
@@ -10,11 +10,16 @@ if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
-const db = new Database(dbPath);
+(async () => {
+  const SQL = await initSqlJs();
 
-console.log("Creating database tables...");
+  const db = fs.existsSync(dbPath)
+    ? new SQL.Database(fs.readFileSync(dbPath))
+    : new SQL.Database();
 
-db.exec(`
+  console.log("Creating database tables...");
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS users (
         discord_id TEXT PRIMARY KEY,
         username TEXT NOT NULL,
@@ -55,16 +60,20 @@ db.exec(`
     CREATE INDEX IF NOT EXISTS idx_time_entries_project ON time_entries(project_id);
     CREATE INDEX IF NOT EXISTS idx_time_entries_clock_in ON time_entries(clock_in);
     CREATE INDEX IF NOT EXISTS idx_time_entries_open ON time_entries(user_id, clock_out) WHERE clock_out IS NULL;
-`);
+  `);
 
-const adminId = process.env.ADMIN_USER_ID;
-if (adminId) {
-  const stmt = db.prepare(
-    "INSERT OR IGNORE INTO users (discord_id, username, is_admin) VALUES (?, ?, 1)",
-  );
-  stmt.run(adminId, "Admin");
-  console.log(`Admin user ${adminId} initialized.`);
-}
+  const adminId = process.env.ADMIN_USER_ID;
+  if (adminId) {
+    const stmt = db.prepare(
+      "INSERT OR IGNORE INTO users (discord_id, username, is_admin) VALUES (?, ?, 1)",
+    );
+    stmt.run([adminId, "Admin"]);
+    stmt.free();
+    console.log(`Admin user ${adminId} initialized.`);
+  }
 
-console.log("Database setup complete!");
-db.close();
+  fs.writeFileSync(dbPath, Buffer.from(db.export()));
+  db.close();
+
+  console.log("Database setup complete!");
+})();
