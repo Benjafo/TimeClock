@@ -3,6 +3,7 @@ const { dbHelpers } = require("../database/database");
 const {
   checkAdminPermission,
   formatDuration,
+  periodStart,
 } = require("../utils/permissions");
 
 module.exports = {
@@ -19,6 +20,24 @@ module.exports = {
           { name: "This Month", value: "month" },
           { name: "All Time", value: "all" },
         ),
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("last")
+        .setDescription("Custom period: last N units of time (overrides period)")
+        .setMinValue(1)
+        .setRequired(false),
+    )
+    .addStringOption((option) =>
+      option
+        .setName("unit")
+        .setDescription("Time unit for the 'last' option (default: days)")
+        .setRequired(false)
+        .addChoices(
+          { name: "Hours", value: "hours" },
+          { name: "Days", value: "days" },
+          { name: "Months", value: "months" },
+        ),
     ),
 
   async execute(interaction) {
@@ -27,17 +46,26 @@ module.exports = {
     if (!hasPermission) return;
 
     const period = interaction.options.getString("period") || "week";
+    const last = interaction.options.getInteger("last");
+    const unit = interaction.options.getString("unit");
 
-    // Calculate date range
+    // Calculate date range; a custom last/unit window overrides the preset
     let startDate = null;
-    const now = new Date();
+    let periodLabel;
 
-    if (period === "week") {
-      startDate = new Date(now);
-      startDate.setDate(now.getDate() - 7);
+    if (last !== null || unit !== null) {
+      const amount = last ?? 1;
+      const resolvedUnit = unit ?? "days";
+      startDate = periodStart(amount, resolvedUnit);
+      periodLabel = `Last ${amount} ${amount === 1 ? resolvedUnit.slice(0, -1) : resolvedUnit}`;
+    } else if (period === "week") {
+      startDate = periodStart(7, "days");
+      periodLabel = "This Week";
     } else if (period === "month") {
-      startDate = new Date(now);
-      startDate.setMonth(now.getMonth() - 1);
+      startDate = periodStart(1, "months");
+      periodLabel = "This Month";
+    } else {
+      periodLabel = "All Time";
     }
 
     const summaryData = dbHelpers.getTeamSummary(startDate);
@@ -48,13 +76,6 @@ module.exports = {
         ephemeral: true,
       });
     }
-
-    const periodLabel =
-      period === "week"
-        ? "This Week"
-        : period === "month"
-          ? "This Month"
-          : "All Time";
 
     const embed = new EmbedBuilder()
       .setColor(0xffd700)

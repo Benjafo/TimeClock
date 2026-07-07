@@ -1,6 +1,12 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { dbHelpers } = require("../database/database");
-const { formatDuration, formatDate } = require("../utils/permissions");
+const {
+  formatDuration,
+  parseDbDate,
+  discordTimestamp,
+  periodStart,
+  toDbUTC,
+} = require("../utils/permissions");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -12,6 +18,24 @@ module.exports = {
         .setDescription("Filter by specific project (optional)")
         .setRequired(false)
         .setAutocomplete(true),
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("last")
+        .setDescription("Only include entries from the last N units of time")
+        .setMinValue(1)
+        .setRequired(false),
+    )
+    .addStringOption((option) =>
+      option
+        .setName("unit")
+        .setDescription("Time unit for the 'last' option (default: days)")
+        .setRequired(false)
+        .addChoices(
+          { name: "Hours", value: "hours" },
+          { name: "Days", value: "days" },
+          { name: "Months", value: "months" },
+        ),
     ),
 
   async autocomplete(interaction) {
@@ -47,13 +71,26 @@ module.exports = {
       projectId = project.id;
     }
 
-    const entries = dbHelpers.getTimeEntries(userId, projectId, 50);
+    // Rolling period filter: /report last:3 unit:days
+    const last = interaction.options.getInteger("last");
+    const unit = interaction.options.getString("unit");
+    let sinceUtc = null;
+    let periodLabel = null;
+
+    if (last !== null || unit !== null) {
+      const amount = last ?? 1;
+      const resolvedUnit = unit ?? "days";
+      sinceUtc = toDbUTC(periodStart(amount, resolvedUnit));
+      periodLabel = `Last ${amount} ${amount === 1 ? resolvedUnit.slice(0, -1) : resolvedUnit}`;
+    }
+
+    const entries = dbHelpers.getTimeEntries(userId, projectId, 50, sinceUtc);
 
     if (entries.length === 0) {
+      const scope = projectName ? ` for project "${projectName}"` : "";
+      const period = periodLabel ? ` in the ${periodLabel.toLowerCase()}` : "";
       return interaction.reply({
-        content: projectName
-          ? `No time entries found for project "${projectName}".`
-          : "No time entries found.",
+        content: `No time entries found${scope}${period}.`,
         ephemeral: true,
       });
     }
@@ -65,7 +102,12 @@ module.exports = {
       .setColor(0x0099ff)
       .setTitle(`Time Report for ${interaction.user.username}`)
       .setDescription(
-        projectName ? `Project: **${projectName}**` : "All Projects",
+        [
+          projectName ? `Project: **${projectName}**` : "All Projects",
+          periodLabel ? `Period: **${periodLabel}**` : null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
       )
       .addFields(
         {
@@ -91,14 +133,14 @@ module.exports = {
 
     for (const entry of recentEntries) {
       const status = entry.clock_out ? "✅" : "⏱️";
-      const clockIn = formatDate(entry.clock_in);
+      const clockIn = discordTimestamp(entry.clock_in);
       const clockOut = entry.clock_out
-        ? formatDate(entry.clock_out)
+        ? discordTimestamp(entry.clock_out)
         : "Still clocked in";
 
       let duration = "";
       if (entry.clock_out) {
-        const diff = new Date(entry.clock_out) - new Date(entry.clock_in);
+        const diff = parseDbDate(entry.clock_out) - parseDbDate(entry.clock_in);
         const mins = diff / (1000 * 60);
         const h = Math.floor(mins / 60);
         const m = Math.floor(mins % 60);
@@ -107,12 +149,16 @@ module.exports = {
 
       reportText += `${status} **${entry.project_name}**\n`;
       reportText += `   In: ${clockIn}\n`;
-      reportText += `   Out: ${clockOut}${duration}\n\n`;
+      reportText += `   Out: ${clockOut}${duration}\n`;
+      if (entry.notes) {
+        reportText += `   📝 ${entry.notes}\n`;
+      }
+      reportText += `\n`;
     }
 
     embed.addFields({
       name: "Recent Entries",
-      value: reportText || "No entries",
+      value: (reportText || "No entries").substring(0, 1024),
     });
 
     if (entries.length > 10) {

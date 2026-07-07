@@ -11,9 +11,47 @@ const {
   formatDate,
   formatDateForInput,
   localToUTC,
+  discordTimestamp,
 } = require("../utils/permissions");
 
+function buildEditModal(entry) {
+  const modal = new ModalBuilder()
+    .setCustomId(`edit_entry_modal_${entry.id}`)
+    .setTitle(`Edit Time Entry - ${entry.project_name}`.substring(0, 45));
+
+  const clockInInput = new TextInputBuilder()
+    .setCustomId("clock_in")
+    .setLabel("Clock In Time (YYYY-MM-DD HH:MM:SS)")
+    .setStyle(TextInputStyle.Short)
+    .setValue(formatDateForInput(entry.clock_in))
+    .setRequired(true);
+
+  const clockOutInput = new TextInputBuilder()
+    .setCustomId("clock_out")
+    .setLabel("Clock Out Time (YYYY-MM-DD HH:MM:SS)")
+    .setStyle(TextInputStyle.Short)
+    .setValue(entry.clock_out ? formatDateForInput(entry.clock_out) : "")
+    .setRequired(false);
+
+  const notesInput = new TextInputBuilder()
+    .setCustomId("notes")
+    .setLabel("Notes (optional)")
+    .setStyle(TextInputStyle.Paragraph)
+    .setValue(entry.notes || "")
+    .setRequired(false);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(clockInInput),
+    new ActionRowBuilder().addComponents(clockOutInput),
+    new ActionRowBuilder().addComponents(notesInput),
+  );
+
+  return modal;
+}
+
 module.exports = {
+  buildEditModal,
+
   data: new SlashCommandBuilder()
     .setName("edit")
     .setDescription("Edit your time entries"),
@@ -79,36 +117,14 @@ module.exports = {
       });
     }
 
-    const modal = new ModalBuilder()
-      .setCustomId(`edit_entry_modal_${entryId}`)
-      .setTitle(`Edit Time Entry - ${entry.project_name}`);
-
-    const clockInInput = new TextInputBuilder()
-      .setCustomId("clock_in")
-      .setLabel("Clock In Time (YYYY-MM-DD HH:MM:SS)")
-      .setStyle(TextInputStyle.Short)
-      .setValue(formatDateForInput(entry.clock_in))
-      .setRequired(true);
-
-    const clockOutInput = new TextInputBuilder()
-      .setCustomId("clock_out")
-      .setLabel("Clock Out Time (YYYY-MM-DD HH:MM:SS)")
-      .setStyle(TextInputStyle.Short)
-      .setValue(entry.clock_out ? formatDateForInput(entry.clock_out) : "")
-      .setRequired(false);
-
-    const firstRow = new ActionRowBuilder().addComponents(clockInInput);
-    const secondRow = new ActionRowBuilder().addComponents(clockOutInput);
-
-    modal.addComponents(firstRow, secondRow);
-
-    await interaction.showModal(modal);
+    await interaction.showModal(buildEditModal(entry));
   },
 
   async handleModalSubmit(interaction) {
     const entryId = parseInt(interaction.customId.split("_")[3]);
     const clockIn = interaction.fields.getTextInputValue("clock_in");
     const clockOut = interaction.fields.getTextInputValue("clock_out") || null;
+    const notes = interaction.fields.getTextInputValue("notes") || null;
 
     const entry = dbHelpers.getTimeEntry(entryId);
     if (entry.user_id !== interaction.user.id) {
@@ -145,18 +161,18 @@ module.exports = {
         });
       }
 
-      dbHelpers.updateTimeEntry(
-        entryId,
-        localToUTC(clockIn),
-        clockOut ? localToUTC(clockOut) : null,
-      );
+      const clockInUTC = localToUTC(clockIn);
+      const clockOutUTC = clockOut ? localToUTC(clockOut) : null;
+
+      dbHelpers.updateTimeEntry(entryId, clockInUTC, clockOutUTC, notes);
 
       await interaction.reply({
         content:
           `Time entry updated successfully!\n` +
           `**${entry.project_name}**\n` +
-          `In: ${formatDate(clockIn)}\n` +
-          `Out: ${clockOut ? formatDate(clockOut) : "Not clocked out"}`,
+          `In: ${discordTimestamp(clockInUTC)}\n` +
+          `Out: ${clockOutUTC ? discordTimestamp(clockOutUTC) : "Not clocked out"}` +
+          (notes ? `\n📝 ${notes}` : ""),
         ephemeral: true,
       });
     } catch (error) {

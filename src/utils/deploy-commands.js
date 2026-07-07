@@ -4,7 +4,7 @@ const path = require("path");
 require("dotenv").config();
 
 const commands = [];
-const commandsPath = path.join(__dirname, "src", "commands");
+const commandsPath = path.join(__dirname, "..", "commands");
 const commandFiles = fs
   .readdirSync(commandsPath)
   .filter((file) => file.endsWith(".js"));

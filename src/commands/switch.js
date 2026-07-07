@@ -1,27 +1,31 @@
-const {
-  SlashCommandBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-} = require("discord.js");
+const { SlashCommandBuilder } = require("discord.js");
 const { dbHelpers } = require("../database/database");
-const { discordTimestamp } = require("../utils/permissions");
+const {
+  formatDuration,
+  parseDbDate,
+  discordTimestamp,
+} = require("../utils/permissions");
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName("clockin")
-    .setDescription("Clock in to a project")
+    .setName("switch")
+    .setDescription("Clock out of your current project and into another")
     .addStringOption((option) =>
       option
         .setName("project")
-        .setDescription("The project to clock in to")
+        .setDescription("The project to switch to")
         .setRequired(true)
         .setAutocomplete(true),
+    )
+    .addStringOption((option) =>
+      option
+        .setName("note")
+        .setDescription("Optional note for the entry you are closing")
+        .setRequired(false),
     ),
 
   async autocomplete(interaction) {
     const focusedValue = interaction.options.getFocused();
-    // Only suggest projects the user can actually clock in to
     const projects = dbHelpers.getUserProjects(interaction.user.id);
     const filtered = projects
       .filter((project) =>
@@ -36,6 +40,7 @@ module.exports = {
 
   async execute(interaction) {
     const projectName = interaction.options.getString("project");
+    const note = interaction.options.getString("note");
     const userId = interaction.user.id;
     const username = interaction.user.username;
 
@@ -57,24 +62,35 @@ module.exports = {
     }
 
     const openEntry = dbHelpers.getUserOpenEntry(userId);
-    if (openEntry) {
-      const openProject = dbHelpers.getTimeEntry(openEntry.id);
+    if (!openEntry) {
       return interaction.reply({
-        content: `You are already clocked in to project "${openProject.project_name}". Please clock out first.`,
+        content: "You are not clocked in to anything. Use /clockin instead.",
         ephemeral: true,
       });
     }
 
+    const previousEntry = dbHelpers.getTimeEntry(openEntry.id);
+    if (previousEntry.project_id === project.id) {
+      return interaction.reply({
+        content: `You are already clocked in to **${projectName}**.`,
+        ephemeral: true,
+      });
+    }
+
+    dbHelpers.clockOut(openEntry.id, note);
     dbHelpers.clockIn(userId, project.id);
 
-    const clockOutButton = new ButtonBuilder()
-      .setCustomId(`clockout_button_${userId}`)
-      .setLabel("Clock Out")
-      .setStyle(ButtonStyle.Primary);
+    const diff = new Date() - parseDbDate(openEntry.clock_in);
+    const totalMinutes = diff / (1000 * 60);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = Math.floor(totalMinutes % 60);
 
     await interaction.reply({
-      content: `Successfully clocked in to project **${projectName}** at ${discordTimestamp(new Date(), "t")}.`,
-      components: [new ActionRowBuilder().addComponents(clockOutButton)],
+      content:
+        `Switched projects at ${discordTimestamp(new Date(), "t")}.\n` +
+        `⏹️ **${previousEntry.project_name}**: ${formatDuration(hours, minutes)}` +
+        (note ? ` — 📝 ${note}` : "") +
+        `\n▶️ **${projectName}**: clocked in.`,
       ephemeral: false,
     });
   },

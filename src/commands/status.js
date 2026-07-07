@@ -1,6 +1,10 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { dbHelpers } = require("../database/database");
-const { formatDuration } = require("../utils/permissions");
+const {
+  formatDuration,
+  parseDbDate,
+  discordTimestamp,
+} = require("../utils/permissions");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -47,7 +51,7 @@ module.exports = {
     let statusText = "";
 
     for (const entry of entries) {
-      const clockInTime = new Date(entry.clock_in);
+      const clockInTime = parseDbDate(entry.clock_in);
       const now = new Date();
       const diff = now - clockInTime;
       const totalMinutes = diff / (1000 * 60);
@@ -58,7 +62,7 @@ module.exports = {
       const displayName = entry.username || "Unknown User";
 
       statusText += `**${displayName}** - ${entry.project_name}\n`;
-      statusText += `⏱️ ${duration}\n\n`;
+      statusText += `⏱️ ${duration} (since ${discordTimestamp(entry.clock_in, "t")}, ${discordTimestamp(entry.clock_in, "R")})\n\n`;
     }
 
     embed.addFields({
