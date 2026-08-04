@@ -12,6 +12,8 @@ const {
 } = require("../utils/permissions");
 
 module.exports = {
+  componentPrefixes: ["delete_project_"],
+
   data: new SlashCommandBuilder()
     .setName("deleteproject")
     .setDescription("Delete a project (Admin only)"),
@@ -37,7 +39,7 @@ module.exports = {
 
     const options = projects.map((project) => ({
       label: project.name,
-      description: `Created ${formatLocalDate(project.created_at)}`,
+      description: `Created ${formatLocalDate(project.created_at, userId)}`,
       value: project.id.toString(),
     }));
 

@@ -20,6 +20,19 @@ async function initializeDatabase() {
     db = new SQL.Database();
   }
 
+  // Tables added after initial release; created here so existing databases
+  // pick them up on boot without re-running db:setup.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_settings (
+        user_id TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT,
+        PRIMARY KEY (user_id, key),
+        FOREIGN KEY (user_id) REFERENCES users(discord_id)
+    );
+  `);
+  saveDatabase();
+
   return db;
 }
 
@@ -86,6 +99,36 @@ let dbInitialized = false;
 })();
 
 const dbHelpers = {
+  // Raw settings access; typed parsing/defaults live in src/config/settings.js
+  getUserSetting(userId, key) {
+    const row = prepare(
+      "SELECT value FROM user_settings WHERE user_id = ? AND key = ?",
+    ).get(userId, key);
+    return row ? row.value : null;
+  },
+
+  setUserSetting(userId, key, value) {
+    if (value === null || value === undefined) {
+      return prepare(
+        "DELETE FROM user_settings WHERE user_id = ? AND key = ?",
+      ).run(userId, key);
+    }
+    return prepare(
+      "INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)",
+    ).run(userId, key, String(value));
+  },
+
+  getAllUserSettings(userId) {
+    const rows = prepare(
+      "SELECT key, value FROM user_settings WHERE user_id = ?",
+    ).all(userId);
+    const settings = {};
+    for (const row of rows) {
+      settings[row.key] = row.value;
+    }
+    return settings;
+  },
+
   getOrCreateUser(discordId, username) {
     const user = prepare("SELECT * FROM users WHERE discord_id = ?").get(
       discordId,
@@ -375,4 +418,4 @@ const dbHelpers = {
   },
 };
 
-module.exports = { db, dbHelpers, initializeDatabase, saveDatabase };
+module.exports = { dbHelpers, initializeDatabase, saveDatabase };

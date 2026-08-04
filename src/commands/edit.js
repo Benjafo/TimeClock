@@ -14,7 +14,8 @@ const {
   discordTimestamp,
 } = require("../utils/permissions");
 
-function buildEditModal(entry) {
+// userId is the viewer/editor: dates are shown and parsed in their timezone.
+function buildEditModal(entry, userId) {
   const modal = new ModalBuilder()
     .setCustomId(`edit_entry_modal_${entry.id}`)
     .setTitle(`Edit Time Entry - ${entry.project_name}`.substring(0, 45));
@@ -23,14 +24,14 @@ function buildEditModal(entry) {
     .setCustomId("clock_in")
     .setLabel("Clock In Time (YYYY-MM-DD HH:MM:SS)")
     .setStyle(TextInputStyle.Short)
-    .setValue(formatDateForInput(entry.clock_in))
+    .setValue(formatDateForInput(entry.clock_in, userId))
     .setRequired(true);
 
   const clockOutInput = new TextInputBuilder()
     .setCustomId("clock_out")
     .setLabel("Clock Out Time (YYYY-MM-DD HH:MM:SS)")
     .setStyle(TextInputStyle.Short)
-    .setValue(entry.clock_out ? formatDateForInput(entry.clock_out) : "")
+    .setValue(entry.clock_out ? formatDateForInput(entry.clock_out, userId) : "")
     .setRequired(false);
 
   const notesInput = new TextInputBuilder()
@@ -51,6 +52,7 @@ function buildEditModal(entry) {
 
 module.exports = {
   buildEditModal,
+  componentPrefixes: ["edit_entry_"],
 
   data: new SlashCommandBuilder()
     .setName("edit")
@@ -73,9 +75,9 @@ module.exports = {
 
     const options = entries.map((entry) => {
       const status = entry.clock_out ? "✅" : "⏱️";
-      const label = `${status} ${entry.project_name} - ${formatDate(entry.clock_in)}`;
+      const label = `${status} ${entry.project_name} - ${formatDate(entry.clock_in, userId)}`;
       const description = entry.clock_out
-        ? `Out: ${formatDate(entry.clock_out)}`
+        ? `Out: ${formatDate(entry.clock_out, userId)}`
         : "Still clocked in";
 
       return {
@@ -117,7 +119,7 @@ module.exports = {
       });
     }
 
-    await interaction.showModal(buildEditModal(entry));
+    await interaction.showModal(buildEditModal(entry, interaction.user.id));
   },
 
   async handleModalSubmit(interaction) {
@@ -161,8 +163,10 @@ module.exports = {
         });
       }
 
-      const clockInUTC = localToUTC(clockIn);
-      const clockOutUTC = clockOut ? localToUTC(clockOut) : null;
+      const clockInUTC = localToUTC(clockIn, interaction.user.id);
+      const clockOutUTC = clockOut
+        ? localToUTC(clockOut, interaction.user.id)
+        : null;
 
       dbHelpers.updateTimeEntry(entryId, clockInUTC, clockOutUTC, notes);
 

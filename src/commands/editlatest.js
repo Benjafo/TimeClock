@@ -3,6 +3,8 @@ const { dbHelpers } = require("../database/database");
 const { buildEditModal } = require("./edit");
 
 module.exports = {
+  componentPrefixes: ["editlatest_button_"],
+
   data: new SlashCommandBuilder()
     .setName("editlatest")
     .setDescription("Edit your most recent time entry"),
@@ -22,7 +24,7 @@ module.exports = {
       });
     }
 
-    await interaction.showModal(buildEditModal(latest));
+    await interaction.showModal(buildEditModal(latest, interaction.user.id));
   },
 
   // "Edit this entry" button attached to the /clockout reply
@@ -43,6 +45,6 @@ module.exports = {
       });
     }
 
-    await interaction.showModal(buildEditModal(latest));
+    await interaction.showModal(buildEditModal(latest, interaction.user.id));
   },
 };

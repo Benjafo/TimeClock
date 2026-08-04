@@ -9,6 +9,8 @@ const { dbHelpers } = require("../database/database");
 const { formatDate } = require("../utils/permissions");
 
 module.exports = {
+  componentPrefixes: ["delete_entry_"],
+
   data: new SlashCommandBuilder()
     .setName("deleteentry")
     .setDescription("Delete one of your time entries"),
@@ -30,9 +32,9 @@ module.exports = {
 
     const options = entries.map((entry) => {
       const status = entry.clock_out ? "✅" : "⏱️";
-      const label = `${status} ${entry.project_name} - ${formatDate(entry.clock_in)}`;
+      const label = `${status} ${entry.project_name} - ${formatDate(entry.clock_in, userId)}`;
       const description = entry.clock_out
-        ? `Out: ${formatDate(entry.clock_out)}`
+        ? `Out: ${formatDate(entry.clock_out, userId)}`
         : "Still clocked in";
 
       return {
@@ -86,8 +88,8 @@ module.exports = {
       content:
         `Delete this entry? This cannot be undone.\n` +
         `**${entry.project_name}**\n` +
-        `In: ${formatDate(entry.clock_in)}\n` +
-        `Out: ${entry.clock_out ? formatDate(entry.clock_out) : "Still clocked in"}`,
+        `In: ${formatDate(entry.clock_in, interaction.user.id)}\n` +
+        `Out: ${entry.clock_out ? formatDate(entry.clock_out, interaction.user.id) : "Still clocked in"}`,
       components: [
         new ActionRowBuilder().addComponents(confirmButton, cancelButton),
       ],
@@ -122,7 +124,7 @@ module.exports = {
     dbHelpers.deleteTimeEntry(entryId);
 
     await interaction.update({
-      content: `Deleted entry for **${entry.project_name}** (In: ${formatDate(entry.clock_in)}).`,
+      content: `Deleted entry for **${entry.project_name}** (In: ${formatDate(entry.clock_in, interaction.user.id)}).`,
       components: [],
     });
   },

@@ -56,6 +56,14 @@ if (!fs.existsSync(dbDir)) {
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS user_settings (
+        user_id TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT,
+        PRIMARY KEY (user_id, key),
+        FOREIGN KEY (user_id) REFERENCES users(discord_id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_time_entries_user ON time_entries(user_id);
     CREATE INDEX IF NOT EXISTS idx_time_entries_project ON time_entries(project_id);
     CREATE INDEX IF NOT EXISTS idx_time_entries_clock_in ON time_entries(clock_in);

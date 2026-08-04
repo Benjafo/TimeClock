@@ -13,6 +13,8 @@ const {
 } = require("../utils/permissions");
 
 module.exports = {
+  componentPrefixes: ["edit_project_"],
+
   data: new SlashCommandBuilder()
     .setName("editproject")
     .setDescription("Edit a project name (Admin only)"),
@@ -38,7 +40,7 @@ module.exports = {
 
     const options = projects.map((project) => ({
       label: project.name,
-      description: `Created ${formatLocalDate(project.created_at)}`,
+      description: `Created ${formatLocalDate(project.created_at, userId)}`,
       value: project.id.toString(),
     }));
 

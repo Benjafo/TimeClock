@@ -1,6 +1,15 @@
 require("dotenv").config();
 
-function getTimezone() {
+// Timezone used for parsing/formatting wall-clock dates. With a userId, the
+// user's `timezone` setting wins; otherwise (or when unset) the TIMEZONE env
+// var is the server-wide default. Lazy require: database.js requires this
+// module at load, so a top-level require here would be circular.
+function getTimezone(userId) {
+  if (userId) {
+    const { dbHelpers } = require("../database/database");
+    const tz = dbHelpers.getUserSetting(userId, "timezone");
+    if (tz) return tz;
+  }
   if (!process.env.TIMEZONE)
     throw new Error(
       "TIMEZONE environment variable is not set. Please set it to a valid IANA timezone string, e.g., 'America/New_York'.",
@@ -42,10 +51,10 @@ function tzOffsetMs(epochMs, timezone) {
 }
 
 // Interpret a wall-clock time (e.g. user input "2026-07-07 09:00:00") in the
-// configured TIMEZONE and return the equivalent UTC "YYYY-MM-DD HH:MM:SS"
-// for storage. Must not depend on the server's OS timezone.
-function localToUTC(dateString) {
-  const timezone = getTimezone();
+// user's (or server's) timezone and return the equivalent UTC
+// "YYYY-MM-DD HH:MM:SS" for storage. Must not depend on the server's OS zone.
+function localToUTC(dateString, userId) {
+  const timezone = getTimezone(userId);
 
   // new Date() reads the string in the server's zone, but the wall-clock
   // digits survive; re-extract them so the server zone cancels out.
@@ -91,7 +100,7 @@ function toDbUTC(date) {
   return date.toISOString().replace("T", " ").substring(0, 19);
 }
 
-function formatDate(dateString) {
+function formatDate(dateString, userId) {
   const date = parseDbDate(dateString);
   return date.toLocaleString("en-US", {
     year: "numeric",
@@ -100,18 +109,18 @@ function formatDate(dateString) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
-    timeZone: getTimezone(),
+    timeZone: getTimezone(userId),
   });
 }
 
-function formatTime(date) {
+function formatTime(date, userId) {
   if (typeof date === "string") date = parseDbDate(date);
   return date.toLocaleTimeString("en-US", {
-    timeZone: getTimezone(),
+    timeZone: getTimezone(userId),
   });
 }
 
-function formatDateForInput(dateString) {
+function formatDateForInput(dateString, userId) {
   const date = parseDbDate(dateString);
   const parts = new Intl.DateTimeFormat("en-US", {
     year: "numeric",
@@ -121,17 +130,17 @@ function formatDateForInput(dateString) {
     minute: "2-digit",
     second: "2-digit",
     hourCycle: "h23",
-    timeZone: getTimezone(),
+    timeZone: getTimezone(userId),
   }).formatToParts(date);
 
   const get = (type) => parts.find((p) => p.type === type).value;
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
 }
 
-function formatLocalDate(dateString) {
+function formatLocalDate(dateString, userId) {
   const date = parseDbDate(dateString);
   return date.toLocaleDateString("en-US", {
-    timeZone: getTimezone(),
+    timeZone: getTimezone(userId),
   });
 }
 
