@@ -8,6 +8,8 @@ const {
 } = require("../utils/permissions");
 
 module.exports = {
+  adminOnly: true,
+
   data: new SlashCommandBuilder()
     .setName("forceclockout")
     .setDescription("Clock out another user (Admin only)")

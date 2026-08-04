@@ -156,6 +156,10 @@ const dbHelpers = {
     return prepare("SELECT * FROM projects WHERE name = ?").get(projectName);
   },
 
+  getProjectById(projectId) {
+    return prepare("SELECT * FROM projects WHERE id = ?").get(projectId);
+  },
+
   getAllProjects() {
     return prepare("SELECT * FROM projects ORDER BY name").all();
   },

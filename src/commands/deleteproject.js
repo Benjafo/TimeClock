@@ -12,6 +12,7 @@ const {
 } = require("../utils/permissions");
 
 module.exports = {
+  adminOnly: true,
   componentPrefixes: ["delete_project_"],
 
   data: new SlashCommandBuilder()

@@ -13,6 +13,7 @@ const {
 } = require("../utils/permissions");
 
 module.exports = {
+  adminOnly: true,
   componentPrefixes: ["edit_project_"],
 
   data: new SlashCommandBuilder()
