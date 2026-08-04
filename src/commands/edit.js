@@ -56,7 +56,13 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName("edit")
-    .setDescription("Edit your time entries"),
+    .setDescription("Edit your time entries")
+    .addUserOption((option) =>
+      option
+        .setName("user")
+        .setDescription("Edit another user's entries (Admin only)")
+        .setRequired(false),
+    ),
 
   async execute(interaction) {
     const userId = interaction.user.id;
@@ -64,11 +70,28 @@ module.exports = {
 
     dbHelpers.getOrCreateUser(userId, username);
 
-    const entries = dbHelpers.getTimeEntries(userId, null, 20);
+    // Admins may edit someone else's entries.
+    const targetUser = interaction.options.getUser("user");
+    if (
+      targetUser &&
+      targetUser.id !== userId &&
+      !dbHelpers.isUserAdmin(userId)
+    ) {
+      return interaction.reply({
+        content: "Only administrators can edit another user's entries.",
+        ephemeral: true,
+      });
+    }
+    const subjectId = targetUser ? targetUser.id : userId;
+    const isSelf = subjectId === userId;
+
+    const entries = dbHelpers.getTimeEntries(subjectId, null, 20);
 
     if (entries.length === 0) {
       return interaction.reply({
-        content: "You have no time entries to edit.",
+        content: isSelf
+          ? "You have no time entries to edit."
+          : `<@${subjectId}> has no time entries to edit.`,
         ephemeral: true,
       });
     }
@@ -95,7 +118,9 @@ module.exports = {
     const row = new ActionRowBuilder().addComponents(selectMenu);
 
     await interaction.reply({
-      content: "Select a time entry to edit:",
+      content: isSelf
+        ? "Select a time entry to edit:"
+        : `Select one of <@${subjectId}>'s time entries to edit:`,
       components: [row],
       ephemeral: true,
     });
@@ -112,7 +137,10 @@ module.exports = {
       });
     }
 
-    if (entry.user_id !== interaction.user.id) {
+    if (
+      entry.user_id !== interaction.user.id &&
+      !dbHelpers.isUserAdmin(interaction.user.id)
+    ) {
       return interaction.reply({
         content: "You can only edit your own time entries.",
         ephemeral: true,
@@ -129,7 +157,17 @@ module.exports = {
     const notes = interaction.fields.getTextInputValue("notes") || null;
 
     const entry = dbHelpers.getTimeEntry(entryId);
-    if (entry.user_id !== interaction.user.id) {
+    if (!entry) {
+      return interaction.reply({
+        content: "Time entry not found (it may have been deleted).",
+        ephemeral: true,
+      });
+    }
+
+    if (
+      entry.user_id !== interaction.user.id &&
+      !dbHelpers.isUserAdmin(interaction.user.id)
+    ) {
       return interaction.reply({
         content: "You can only edit your own time entries.",
         ephemeral: true,
@@ -170,9 +208,12 @@ module.exports = {
 
       dbHelpers.updateTimeEntry(entryId, clockInUTC, clockOutUTC, notes);
 
+      const whose =
+        entry.user_id === interaction.user.id ? "" : ` (for <@${entry.user_id}>)`;
+
       await interaction.reply({
         content:
-          `Time entry updated successfully!\n` +
+          `Time entry updated successfully!${whose}\n` +
           `**${entry.project_name}**\n` +
           `In: ${discordTimestamp(clockInUTC)}\n` +
           `Out: ${clockOutUTC ? discordTimestamp(clockOutUTC) : "Not clocked out"}` +

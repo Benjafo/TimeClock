@@ -13,7 +13,13 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName("deleteentry")
-    .setDescription("Delete one of your time entries"),
+    .setDescription("Delete one of your time entries")
+    .addUserOption((option) =>
+      option
+        .setName("user")
+        .setDescription("Delete another user's entry (Admin only)")
+        .setRequired(false),
+    ),
 
   async execute(interaction) {
     const userId = interaction.user.id;
@@ -21,11 +27,28 @@ module.exports = {
 
     dbHelpers.getOrCreateUser(userId, username);
 
-    const entries = dbHelpers.getTimeEntries(userId, null, 20);
+    // Admins may delete someone else's entries.
+    const targetUser = interaction.options.getUser("user");
+    if (
+      targetUser &&
+      targetUser.id !== userId &&
+      !dbHelpers.isUserAdmin(userId)
+    ) {
+      return interaction.reply({
+        content: "Only administrators can delete another user's entries.",
+        ephemeral: true,
+      });
+    }
+    const subjectId = targetUser ? targetUser.id : userId;
+    const isSelf = subjectId === userId;
+
+    const entries = dbHelpers.getTimeEntries(subjectId, null, 20);
 
     if (entries.length === 0) {
       return interaction.reply({
-        content: "You have no time entries to delete.",
+        content: isSelf
+          ? "You have no time entries to delete."
+          : `<@${subjectId}> has no time entries to delete.`,
         ephemeral: true,
       });
     }
@@ -50,7 +73,9 @@ module.exports = {
       .addOptions(options.slice(0, 25));
 
     await interaction.reply({
-      content: "Select a time entry to delete:",
+      content: isSelf
+        ? "Select a time entry to delete:"
+        : `Select one of <@${subjectId}>'s time entries to delete:`,
       components: [new ActionRowBuilder().addComponents(selectMenu)],
       ephemeral: true,
     });
@@ -67,7 +92,10 @@ module.exports = {
       });
     }
 
-    if (entry.user_id !== interaction.user.id) {
+    if (
+      entry.user_id !== interaction.user.id &&
+      !dbHelpers.isUserAdmin(interaction.user.id)
+    ) {
       return interaction.update({
         content: "You can only delete your own time entries.",
         components: [],
@@ -114,7 +142,10 @@ module.exports = {
       });
     }
 
-    if (entry.user_id !== interaction.user.id) {
+    if (
+      entry.user_id !== interaction.user.id &&
+      !dbHelpers.isUserAdmin(interaction.user.id)
+    ) {
       return interaction.update({
         content: "You can only delete your own time entries.",
         components: [],
@@ -123,8 +154,11 @@ module.exports = {
 
     dbHelpers.deleteTimeEntry(entryId);
 
+    const whose =
+      entry.user_id === interaction.user.id ? "" : ` (owned by <@${entry.user_id}>)`;
+
     await interaction.update({
-      content: `Deleted entry for **${entry.project_name}** (In: ${formatDate(entry.clock_in, interaction.user.id)}).`,
+      content: `Deleted entry for **${entry.project_name}**${whose} (In: ${formatDate(entry.clock_in, interaction.user.id)}).`,
       components: [],
     });
   },

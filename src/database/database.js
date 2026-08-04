@@ -152,6 +152,20 @@ const dbHelpers = {
     return user && user.is_admin === 1;
   },
 
+  setUserAdmin(discordId, isAdmin) {
+    return prepare("UPDATE users SET is_admin = ? WHERE discord_id = ?").run(
+      isAdmin ? 1 : 0,
+      discordId,
+    );
+  },
+
+  countAdmins() {
+    const row = prepare(
+      "SELECT COUNT(*) as count FROM users WHERE is_admin = 1",
+    ).get();
+    return row ? row.count : 0;
+  },
+
   getProject(projectName) {
     return prepare("SELECT * FROM projects WHERE name = ?").get(projectName);
   },
@@ -205,6 +219,16 @@ const dbHelpers = {
     ).run(userId, projectId);
   },
 
+  getProjectMembers(projectId) {
+    return prepare(`
+            SELECT u.*
+            FROM users u
+            JOIN user_projects up ON up.user_id = u.discord_id
+            WHERE up.project_id = ?
+            ORDER BY u.username
+        `).all(projectId);
+  },
+
   getUserProjects(userId) {
     return prepare(`
             SELECT p.*
@@ -232,6 +256,14 @@ const dbHelpers = {
       'INSERT INTO time_entries (user_id, project_id, clock_in) VALUES (?, ?, datetime("now"))',
     );
     return stmt.run(userId, projectId);
+  },
+
+  // Insert a complete (or open, when clockOut is null) entry with explicit
+  // UTC "YYYY-MM-DD HH:MM:SS" timestamps. Used by /addentry.
+  createTimeEntry(userId, projectId, clockIn, clockOut = null, notes = null) {
+    return prepare(
+      "INSERT INTO time_entries (user_id, project_id, clock_in, clock_out, notes) VALUES (?, ?, ?, ?, ?)",
+    ).run(userId, projectId, clockIn, clockOut, notes);
   },
 
   clockOut(entryId, note = null) {
