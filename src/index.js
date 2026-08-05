@@ -53,56 +53,12 @@ function findComponentCommand(customId) {
     return null;
 }
 
+const { startBackgroundSweeps } = require('./utils/sweeps');
+
 client.once(Events.ClientReady, readyClient => {
     console.log(`Ready! Logged in as ${readyClient.user.tag}`);
-    startForgottenClockoutReminders();
+    startBackgroundSweeps(client);
 });
-
-// DM users who have been clocked in longer than REMINDER_HOURS (default 8).
-// Set REMINDER_HOURS=0 to disable. Reminders are tracked in memory, so a
-// restart may re-send at most one extra reminder per open entry.
-function startForgottenClockoutReminders() {
-    const reminderHours = process.env.REMINDER_HOURS === undefined
-        ? 8
-        : Number(process.env.REMINDER_HOURS);
-
-    if (!reminderHours || Number.isNaN(reminderHours)) {
-        console.log('Forgotten clock-out reminders disabled.');
-        return;
-    }
-
-    const { dbHelpers } = require('./database/database');
-    const { parseDbDate, discordTimestamp } = require('./utils/time');
-    const remindedEntryIds = new Set();
-
-    setInterval(async () => {
-        try {
-            const openEntries = dbHelpers.getAllOpenEntries();
-            const cutoff = Date.now() - reminderHours * 3600000;
-
-            for (const entry of openEntries) {
-                if (remindedEntryIds.has(entry.id)) continue;
-                if (parseDbDate(entry.clock_in).getTime() > cutoff) continue;
-
-                remindedEntryIds.add(entry.id);
-                try {
-                    const user = await client.users.fetch(entry.discord_id);
-                    await user.send(
-                        `⏰ You have been clocked in to **${entry.project_name}** since ` +
-                        `${discordTimestamp(entry.clock_in)} (${discordTimestamp(entry.clock_in, 'R')}). ` +
-                        `If you forgot to clock out, use /clockout or fix the entry with /editlatest.`
-                    );
-                } catch (dmError) {
-                    console.error(`Could not DM reminder to ${entry.username}:`, dmError.message);
-                }
-            }
-        } catch (error) {
-            console.error('Error in forgotten clock-out sweep:', error);
-        }
-    }, 30 * 60 * 1000);
-
-    console.log(`Forgotten clock-out reminders enabled (threshold: ${reminderHours}h).`);
-}
 
 client.on(Events.InteractionCreate, async interaction => {
     try {
