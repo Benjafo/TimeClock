@@ -1,9 +1,9 @@
 const {
   SlashCommandBuilder,
-  ActionRowBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  LabelBuilder,
 } = require("discord.js");
 const { dbHelpers } = require("../database/database");
 const {
@@ -13,6 +13,7 @@ const {
   formatDuration,
   parseDbDate,
 } = require("../utils/permissions");
+const { startPicker, usesTextboxOnly } = require("../components/datetimePicker");
 
 module.exports = {
   componentPrefixes: ["add_entry_"],
@@ -62,6 +63,16 @@ module.exports = {
       });
     }
 
+    if (!usesTextboxOnly(userId)) {
+      return startPicker(interaction, {
+        kind: "add",
+        projectId: project.id,
+        projectName: project.name,
+        via: "reply",
+      });
+    }
+
+    // Textbox fallback
     const now = formatDateForInput(new Date(), userId);
 
     const modal = new ModalBuilder()
@@ -70,28 +81,34 @@ module.exports = {
 
     const clockInInput = new TextInputBuilder()
       .setCustomId("clock_in")
-      .setLabel("Clock In Time (YYYY-MM-DD HH:MM:SS)")
       .setStyle(TextInputStyle.Short)
       .setValue(now)
       .setRequired(true);
 
     const clockOutInput = new TextInputBuilder()
       .setCustomId("clock_out")
-      .setLabel("Clock Out Time (YYYY-MM-DD HH:MM:SS)")
       .setStyle(TextInputStyle.Short)
       .setValue(now)
       .setRequired(true);
 
     const notesInput = new TextInputBuilder()
       .setCustomId("notes")
-      .setLabel("Notes (optional)")
       .setStyle(TextInputStyle.Paragraph)
       .setRequired(false);
 
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(clockInInput),
-      new ActionRowBuilder().addComponents(clockOutInput),
-      new ActionRowBuilder().addComponents(notesInput),
+    modal.addLabelComponents(
+      new LabelBuilder()
+        .setLabel("Clock In Time")
+        .setDescription("Format: YYYY-MM-DD HH:MM:SS")
+        .setTextInputComponent(clockInInput),
+      new LabelBuilder()
+        .setLabel("Clock Out Time")
+        .setDescription("Format: YYYY-MM-DD HH:MM:SS")
+        .setTextInputComponent(clockOutInput),
+      new LabelBuilder()
+        .setLabel("Notes")
+        .setDescription("Optional")
+        .setTextInputComponent(notesInput),
     );
 
     await interaction.showModal(modal);

@@ -39,6 +39,13 @@ for (const file of commandFiles) {
     }
 }
 
+// Non-command component handlers (same interface: componentPrefixes +
+// handleSelectMenu/handleButton/handleModalSubmit).
+const datetimePicker = require('./components/datetimePicker');
+for (const prefix of datetimePicker.componentPrefixes) {
+    componentRoutes.set(prefix, datetimePicker);
+}
+
 function findComponentCommand(customId) {
     for (const [prefix, command] of componentRoutes) {
         if (customId.startsWith(prefix)) return command;

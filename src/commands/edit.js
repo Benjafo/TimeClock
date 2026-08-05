@@ -5,6 +5,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  LabelBuilder,
 } = require("discord.js");
 const { dbHelpers } = require("../database/database");
 const {
@@ -13,7 +14,9 @@ const {
   localToUTC,
   discordTimestamp,
 } = require("../utils/permissions");
+const { startPicker, usesTextboxOnly } = require("../components/datetimePicker");
 
+// Textbox fallback for users with datepicker+timepicker set to "textbox".
 // userId is the viewer/editor: dates are shown and parsed in their timezone.
 function buildEditModal(entry, userId) {
   const modal = new ModalBuilder()
@@ -22,29 +25,35 @@ function buildEditModal(entry, userId) {
 
   const clockInInput = new TextInputBuilder()
     .setCustomId("clock_in")
-    .setLabel("Clock In Time (YYYY-MM-DD HH:MM:SS)")
     .setStyle(TextInputStyle.Short)
     .setValue(formatDateForInput(entry.clock_in, userId))
     .setRequired(true);
 
   const clockOutInput = new TextInputBuilder()
     .setCustomId("clock_out")
-    .setLabel("Clock Out Time (YYYY-MM-DD HH:MM:SS)")
     .setStyle(TextInputStyle.Short)
     .setValue(entry.clock_out ? formatDateForInput(entry.clock_out, userId) : "")
     .setRequired(false);
 
   const notesInput = new TextInputBuilder()
     .setCustomId("notes")
-    .setLabel("Notes (optional)")
     .setStyle(TextInputStyle.Paragraph)
     .setValue(entry.notes || "")
     .setRequired(false);
 
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(clockInInput),
-    new ActionRowBuilder().addComponents(clockOutInput),
-    new ActionRowBuilder().addComponents(notesInput),
+  modal.addLabelComponents(
+    new LabelBuilder()
+      .setLabel("Clock In Time")
+      .setDescription("Format: YYYY-MM-DD HH:MM:SS")
+      .setTextInputComponent(clockInInput),
+    new LabelBuilder()
+      .setLabel("Clock Out Time")
+      .setDescription("YYYY-MM-DD HH:MM:SS, or empty if still clocked in")
+      .setTextInputComponent(clockOutInput),
+    new LabelBuilder()
+      .setLabel("Notes")
+      .setDescription("Optional")
+      .setTextInputComponent(notesInput),
   );
 
   return modal;
@@ -147,7 +156,10 @@ module.exports = {
       });
     }
 
-    await interaction.showModal(buildEditModal(entry, interaction.user.id));
+    if (usesTextboxOnly(interaction.user.id)) {
+      return interaction.showModal(buildEditModal(entry, interaction.user.id));
+    }
+    await startPicker(interaction, { kind: "edit", entry, via: "update" });
   },
 
   async handleModalSubmit(interaction) {
