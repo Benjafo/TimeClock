@@ -5,6 +5,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  LabelBuilder,
 } = require("discord.js");
 const { dbHelpers } = require("../database/database");
 const {
@@ -13,6 +14,9 @@ const {
 } = require("../utils/permissions");
 
 module.exports = {
+  adminOnly: true,
+  componentPrefixes: ["edit_project_"],
+
   data: new SlashCommandBuilder()
     .setName("editproject")
     .setDescription("Edit a project name (Admin only)"),
@@ -38,7 +42,7 @@ module.exports = {
 
     const options = projects.map((project) => ({
       label: project.name,
-      description: `Created ${formatLocalDate(project.created_at)}`,
+      description: `Created ${formatLocalDate(project.created_at, userId)}`,
       value: project.id.toString(),
     }));
 
@@ -74,13 +78,15 @@ module.exports = {
 
     const nameInput = new TextInputBuilder()
       .setCustomId("project_name")
-      .setLabel("New Project Name")
       .setStyle(TextInputStyle.Short)
       .setValue(project.name)
       .setRequired(true);
 
-    const row = new ActionRowBuilder().addComponents(nameInput);
-    modal.addComponents(row);
+    modal.addLabelComponents(
+      new LabelBuilder()
+        .setLabel("New Project Name")
+        .setTextInputComponent(nameInput),
+    );
 
     await interaction.showModal(modal);
   },

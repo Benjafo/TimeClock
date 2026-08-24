@@ -36,6 +36,12 @@ module.exports = {
           { name: "Days", value: "days" },
           { name: "Months", value: "months" },
         ),
+    )
+    .addUserOption((option) =>
+      option
+        .setName("user")
+        .setDescription("View another user's report (Admin only)")
+        .setRequired(false),
     ),
 
   async autocomplete(interaction) {
@@ -58,6 +64,21 @@ module.exports = {
     const username = interaction.user.username;
 
     dbHelpers.getOrCreateUser(userId, username);
+
+    // Admins may view someone else's report.
+    const targetUser = interaction.options.getUser("user");
+    if (
+      targetUser &&
+      targetUser.id !== userId &&
+      !dbHelpers.isUserAdmin(userId)
+    ) {
+      return interaction.reply({
+        content: "Only administrators can view another user's report.",
+        ephemeral: true,
+      });
+    }
+    const subjectId = targetUser ? targetUser.id : userId;
+    const subjectName = targetUser ? targetUser.username : username;
 
     let projectId = null;
     if (projectName) {
@@ -84,7 +105,7 @@ module.exports = {
       periodLabel = `Last ${amount} ${amount === 1 ? resolvedUnit.slice(0, -1) : resolvedUnit}`;
     }
 
-    const entries = dbHelpers.getTimeEntries(userId, projectId, 50, sinceUtc);
+    const entries = dbHelpers.getTimeEntries(subjectId, projectId, 50, sinceUtc);
 
     if (entries.length === 0) {
       const scope = projectName ? ` for project "${projectName}"` : "";
@@ -100,7 +121,7 @@ module.exports = {
 
     const embed = new EmbedBuilder()
       .setColor(0x0099ff)
-      .setTitle(`Time Report for ${interaction.user.username}`)
+      .setTitle(`Time Report for ${subjectName}`)
       .setDescription(
         [
           projectName ? `Project: **${projectName}**` : "All Projects",

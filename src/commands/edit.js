@@ -5,6 +5,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  LabelBuilder,
 } = require("discord.js");
 const { dbHelpers } = require("../database/database");
 const {
@@ -13,37 +14,46 @@ const {
   localToUTC,
   discordTimestamp,
 } = require("../utils/permissions");
+const { startPicker, usesTextboxOnly } = require("../components/datetimePicker");
 
-function buildEditModal(entry) {
+// Textbox fallback for users with datepicker+timepicker set to "textbox".
+// userId is the viewer/editor: dates are shown and parsed in their timezone.
+function buildEditModal(entry, userId) {
   const modal = new ModalBuilder()
     .setCustomId(`edit_entry_modal_${entry.id}`)
     .setTitle(`Edit Time Entry - ${entry.project_name}`.substring(0, 45));
 
   const clockInInput = new TextInputBuilder()
     .setCustomId("clock_in")
-    .setLabel("Clock In Time (YYYY-MM-DD HH:MM:SS)")
     .setStyle(TextInputStyle.Short)
-    .setValue(formatDateForInput(entry.clock_in))
+    .setValue(formatDateForInput(entry.clock_in, userId))
     .setRequired(true);
 
   const clockOutInput = new TextInputBuilder()
     .setCustomId("clock_out")
-    .setLabel("Clock Out Time (YYYY-MM-DD HH:MM:SS)")
     .setStyle(TextInputStyle.Short)
-    .setValue(entry.clock_out ? formatDateForInput(entry.clock_out) : "")
+    .setValue(entry.clock_out ? formatDateForInput(entry.clock_out, userId) : "")
     .setRequired(false);
 
   const notesInput = new TextInputBuilder()
     .setCustomId("notes")
-    .setLabel("Notes (optional)")
     .setStyle(TextInputStyle.Paragraph)
     .setValue(entry.notes || "")
     .setRequired(false);
 
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(clockInInput),
-    new ActionRowBuilder().addComponents(clockOutInput),
-    new ActionRowBuilder().addComponents(notesInput),
+  modal.addLabelComponents(
+    new LabelBuilder()
+      .setLabel("Clock In Time")
+      .setDescription("Format: YYYY-MM-DD HH:MM:SS")
+      .setTextInputComponent(clockInInput),
+    new LabelBuilder()
+      .setLabel("Clock Out Time")
+      .setDescription("YYYY-MM-DD HH:MM:SS, or empty if still clocked in")
+      .setTextInputComponent(clockOutInput),
+    new LabelBuilder()
+      .setLabel("Notes")
+      .setDescription("Optional")
+      .setTextInputComponent(notesInput),
   );
 
   return modal;
@@ -51,10 +61,17 @@ function buildEditModal(entry) {
 
 module.exports = {
   buildEditModal,
+  componentPrefixes: ["edit_entry_"],
 
   data: new SlashCommandBuilder()
     .setName("edit")
-    .setDescription("Edit your time entries"),
+    .setDescription("Edit your time entries")
+    .addUserOption((option) =>
+      option
+        .setName("user")
+        .setDescription("Edit another user's entries (Admin only)")
+        .setRequired(false),
+    ),
 
   async execute(interaction) {
     const userId = interaction.user.id;
@@ -62,20 +79,37 @@ module.exports = {
 
     dbHelpers.getOrCreateUser(userId, username);
 
-    const entries = dbHelpers.getTimeEntries(userId, null, 20);
+    // Admins may edit someone else's entries.
+    const targetUser = interaction.options.getUser("user");
+    if (
+      targetUser &&
+      targetUser.id !== userId &&
+      !dbHelpers.isUserAdmin(userId)
+    ) {
+      return interaction.reply({
+        content: "Only administrators can edit another user's entries.",
+        ephemeral: true,
+      });
+    }
+    const subjectId = targetUser ? targetUser.id : userId;
+    const isSelf = subjectId === userId;
+
+    const entries = dbHelpers.getTimeEntries(subjectId, null, 20);
 
     if (entries.length === 0) {
       return interaction.reply({
-        content: "You have no time entries to edit.",
+        content: isSelf
+          ? "You have no time entries to edit."
+          : `<@${subjectId}> has no time entries to edit.`,
         ephemeral: true,
       });
     }
 
     const options = entries.map((entry) => {
       const status = entry.clock_out ? "✅" : "⏱️";
-      const label = `${status} ${entry.project_name} - ${formatDate(entry.clock_in)}`;
+      const label = `${status} ${entry.project_name} - ${formatDate(entry.clock_in, userId)}`;
       const description = entry.clock_out
-        ? `Out: ${formatDate(entry.clock_out)}`
+        ? `Out: ${formatDate(entry.clock_out, userId)}`
         : "Still clocked in";
 
       return {
@@ -93,7 +127,9 @@ module.exports = {
     const row = new ActionRowBuilder().addComponents(selectMenu);
 
     await interaction.reply({
-      content: "Select a time entry to edit:",
+      content: isSelf
+        ? "Select a time entry to edit:"
+        : `Select one of <@${subjectId}>'s time entries to edit:`,
       components: [row],
       ephemeral: true,
     });
@@ -110,14 +146,20 @@ module.exports = {
       });
     }
 
-    if (entry.user_id !== interaction.user.id) {
+    if (
+      entry.user_id !== interaction.user.id &&
+      !dbHelpers.isUserAdmin(interaction.user.id)
+    ) {
       return interaction.reply({
         content: "You can only edit your own time entries.",
         ephemeral: true,
       });
     }
 
-    await interaction.showModal(buildEditModal(entry));
+    if (usesTextboxOnly(interaction.user.id)) {
+      return interaction.showModal(buildEditModal(entry, interaction.user.id));
+    }
+    await startPicker(interaction, { kind: "edit", entry, via: "update" });
   },
 
   async handleModalSubmit(interaction) {
@@ -127,7 +169,17 @@ module.exports = {
     const notes = interaction.fields.getTextInputValue("notes") || null;
 
     const entry = dbHelpers.getTimeEntry(entryId);
-    if (entry.user_id !== interaction.user.id) {
+    if (!entry) {
+      return interaction.reply({
+        content: "Time entry not found (it may have been deleted).",
+        ephemeral: true,
+      });
+    }
+
+    if (
+      entry.user_id !== interaction.user.id &&
+      !dbHelpers.isUserAdmin(interaction.user.id)
+    ) {
       return interaction.reply({
         content: "You can only edit your own time entries.",
         ephemeral: true,
@@ -161,14 +213,19 @@ module.exports = {
         });
       }
 
-      const clockInUTC = localToUTC(clockIn);
-      const clockOutUTC = clockOut ? localToUTC(clockOut) : null;
+      const clockInUTC = localToUTC(clockIn, interaction.user.id);
+      const clockOutUTC = clockOut
+        ? localToUTC(clockOut, interaction.user.id)
+        : null;
 
       dbHelpers.updateTimeEntry(entryId, clockInUTC, clockOutUTC, notes);
 
+      const whose =
+        entry.user_id === interaction.user.id ? "" : ` (for <@${entry.user_id}>)`;
+
       await interaction.reply({
         content:
-          `Time entry updated successfully!\n` +
+          `Time entry updated successfully!${whose}\n` +
           `**${entry.project_name}**\n` +
           `In: ${discordTimestamp(clockInUTC)}\n` +
           `Out: ${clockOutUTC ? discordTimestamp(clockOutUTC) : "Not clocked out"}` +

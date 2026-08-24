@@ -3,6 +3,8 @@ const { dbHelpers } = require("../database/database");
 const { checkAdminPermission } = require("../utils/permissions");
 
 module.exports = {
+  adminOnly: true,
+
   data: new SlashCommandBuilder()
     .setName("unassign")
     .setDescription("Remove a user from a project (Admin only)")

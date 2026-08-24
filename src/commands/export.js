@@ -14,12 +14,13 @@ function csvEscape(value) {
   return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
-function buildCsv(entries, includeUsername) {
+// userId: the requester — CSV timestamps are rendered in their timezone.
+function buildCsv(entries, includeUsername, userId) {
   const header = [
     ...(includeUsername ? ["username"] : []),
     "project",
-    `clock_in (${getTimezone()})`,
-    `clock_out (${getTimezone()})`,
+    `clock_in (${getTimezone(userId)})`,
+    `clock_out (${getTimezone(userId)})`,
     "hours",
     "notes",
   ];
@@ -35,8 +36,8 @@ function buildCsv(entries, includeUsername) {
     return [
       ...(includeUsername ? [entry.username] : []),
       entry.project_name,
-      formatDateForInput(entry.clock_in),
-      entry.clock_out ? formatDateForInput(entry.clock_out) : "",
+      formatDateForInput(entry.clock_in, userId),
+      entry.clock_out ? formatDateForInput(entry.clock_out, userId) : "",
       hours,
       entry.notes || "",
     ];
@@ -141,7 +142,7 @@ module.exports = {
       });
     }
 
-    const csv = buildCsv(entries, team);
+    const csv = buildCsv(entries, team, userId);
     const file = new AttachmentBuilder(Buffer.from(csv, "utf8"), {
       name: `timeclock-export-${team ? "team" : interaction.user.username}.csv`,
     });

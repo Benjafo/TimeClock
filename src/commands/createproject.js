@@ -3,6 +3,8 @@ const { dbHelpers } = require("../database/database");
 const { checkAdminPermission } = require("../utils/permissions");
 
 module.exports = {
+  adminOnly: true,
+
   data: new SlashCommandBuilder()
     .setName("createproject")
     .setDescription("Create a new project (Admin only)")

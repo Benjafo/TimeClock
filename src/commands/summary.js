@@ -7,6 +7,8 @@ const {
 } = require("../utils/permissions");
 
 module.exports = {
+  adminOnly: true,
+
   data: new SlashCommandBuilder()
     .setName("summary")
     .setDescription("View team time summary (Admin only)")

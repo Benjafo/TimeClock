@@ -20,6 +20,19 @@ async function initializeDatabase() {
     db = new SQL.Database();
   }
 
+  // Tables added after initial release; created here so existing databases
+  // pick them up on boot without re-running db:setup.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_settings (
+        user_id TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT,
+        PRIMARY KEY (user_id, key),
+        FOREIGN KEY (user_id) REFERENCES users(discord_id)
+    );
+  `);
+  saveDatabase();
+
   return db;
 }
 
@@ -86,6 +99,36 @@ let dbInitialized = false;
 })();
 
 const dbHelpers = {
+  // Raw settings access; typed parsing/defaults live in src/config/settings.js
+  getUserSetting(userId, key) {
+    const row = prepare(
+      "SELECT value FROM user_settings WHERE user_id = ? AND key = ?",
+    ).get(userId, key);
+    return row ? row.value : null;
+  },
+
+  setUserSetting(userId, key, value) {
+    if (value === null || value === undefined) {
+      return prepare(
+        "DELETE FROM user_settings WHERE user_id = ? AND key = ?",
+      ).run(userId, key);
+    }
+    return prepare(
+      "INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)",
+    ).run(userId, key, String(value));
+  },
+
+  getAllUserSettings(userId) {
+    const rows = prepare(
+      "SELECT key, value FROM user_settings WHERE user_id = ?",
+    ).all(userId);
+    const settings = {};
+    for (const row of rows) {
+      settings[row.key] = row.value;
+    }
+    return settings;
+  },
+
   getOrCreateUser(discordId, username) {
     const user = prepare("SELECT * FROM users WHERE discord_id = ?").get(
       discordId,
@@ -109,8 +152,26 @@ const dbHelpers = {
     return user && user.is_admin === 1;
   },
 
+  setUserAdmin(discordId, isAdmin) {
+    return prepare("UPDATE users SET is_admin = ? WHERE discord_id = ?").run(
+      isAdmin ? 1 : 0,
+      discordId,
+    );
+  },
+
+  countAdmins() {
+    const row = prepare(
+      "SELECT COUNT(*) as count FROM users WHERE is_admin = 1",
+    ).get();
+    return row ? row.count : 0;
+  },
+
   getProject(projectName) {
     return prepare("SELECT * FROM projects WHERE name = ?").get(projectName);
+  },
+
+  getProjectById(projectId) {
+    return prepare("SELECT * FROM projects WHERE id = ?").get(projectId);
   },
 
   getAllProjects() {
@@ -158,6 +219,16 @@ const dbHelpers = {
     ).run(userId, projectId);
   },
 
+  getProjectMembers(projectId) {
+    return prepare(`
+            SELECT u.*
+            FROM users u
+            JOIN user_projects up ON up.user_id = u.discord_id
+            WHERE up.project_id = ?
+            ORDER BY u.username
+        `).all(projectId);
+  },
+
   getUserProjects(userId) {
     return prepare(`
             SELECT p.*
@@ -185,6 +256,14 @@ const dbHelpers = {
       'INSERT INTO time_entries (user_id, project_id, clock_in) VALUES (?, ?, datetime("now"))',
     );
     return stmt.run(userId, projectId);
+  },
+
+  // Insert a complete (or open, when clockOut is null) entry with explicit
+  // UTC "YYYY-MM-DD HH:MM:SS" timestamps. Used by /addentry.
+  createTimeEntry(userId, projectId, clockIn, clockOut = null, notes = null) {
+    return prepare(
+      "INSERT INTO time_entries (user_id, project_id, clock_in, clock_out, notes) VALUES (?, ?, ?, ?, ?)",
+    ).run(userId, projectId, clockIn, clockOut, notes);
   },
 
   clockOut(entryId, note = null) {
@@ -375,4 +454,4 @@ const dbHelpers = {
   },
 };
 
-module.exports = { db, dbHelpers, initializeDatabase, saveDatabase };
+module.exports = { dbHelpers, initializeDatabase, saveDatabase };

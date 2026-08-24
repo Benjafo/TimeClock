@@ -54,6 +54,7 @@ async function performClockOut(interaction, note) {
 
 module.exports = {
   performClockOut,
+  componentPrefixes: ["clockout_button_"],
 
   data: new SlashCommandBuilder()
     .setName("clockout")
